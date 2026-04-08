@@ -1,518 +1,345 @@
 import { useState, useMemo, useEffect } from "react";
+import WORKSHEETS from "../data.json";
+
+// ─── Subject metadata ────────────────────────────────────────────────────────
+const SUBJECT_META = {
+  English:          { icon: "📖", color: "#b45309", bg: "#fef9ee", border: "#fbbf24" },
+  Mathematics:      { icon: "🔢", color: "#1d4ed8", bg: "#eff6ff", border: "#60a5fa" },
+  EVS:              { icon: "🌿", color: "#047857", bg: "#f0fdf4", border: "#34d399" },
+  Science:          { icon: "🔬", color: "#6d28d9", bg: "#f5f3ff", border: "#a78bfa" },
+  "Social Science": { icon: "🌍", color: "#be185d", bg: "#fdf2f8", border: "#f472b6" },
+};
 
 const SUBJECTS_BY_CLASS = (cls) =>
-  cls <= 5
-    ? ["English", "Mathematics", "EVS"]
-    : ["English", "Mathematics", "Science", "Social Science"];
-
-const SUBJECT_META = {
-  English: { icon: "📖", color: "#b45309", bg: "#fef3c7", border: "#fbbf24" },
-  Mathematics: { icon: "🔢", color: "#1d4ed8", bg: "#dbeafe", border: "#60a5fa" },
-  EVS: { icon: "🌿", color: "#047857", bg: "#d1fae5", border: "#34d399" },
-  Science: { icon: "🔬", color: "#6d28d9", bg: "#ede9fe", border: "#a78bfa" },
-  "Social Science": { icon: "🌍", color: "#be185d", bg: "#fce7f3", border: "#f472b6" },
-};
-
-const CHAPTERS = {
-  English: {
-    1: ["My Family", "Animals Around Us", "The Seasons", "Action Words"],
-    2: ["A Busy Market", "Plants We Eat", "Time & Clock", "Story Words"],
-    3: ["Community Helpers", "Weather Watch", "Nouns & Pronouns", "Describing Words"],
-    4: ["Tenses", "Paragraph Writing", "Reading Comprehension", "Vocabulary Building"],
-    5: ["Verb Forms", "Letter Writing", "Comprehension Passages", "Grammar Practice"],
-    6: ["Prose & Poetry", "Active & Passive Voice", "Email Writing", "Comprehension"],
-    7: ["Literature Chapters", "Reported Speech", "Essay Writing", "Editing & Omission"],
-    8: ["The Best Christmas Present", "Advanced Reported Speech", "Article Writing", "Formal Letters"],
-  },
-  Mathematics: {
-    1: ["Numbers 1–100", "Addition", "Subtraction", "Shapes & Patterns"],
-    2: ["Numbers 1–1000", "Multiplication", "Division Basics", "Measurement"],
-    3: ["4-Digit Numbers", "Multiplication Tables", "Fractions Intro", "Time & Calendar"],
-    4: ["Large Numbers", "Factors & Multiples", "Fractions", "Geometry Basics"],
-    5: ["Roman Numerals", "HCF & LCM", "Decimals", "Area & Perimeter"],
-    6: ["Integers", "Fractions & Decimals", "Ratio & Proportion", "Basic Algebra"],
-    7: ["Rational Numbers", "Linear Equations", "Congruence of Triangles", "Comparing Quantities"],
-    8: ["Rational Numbers Advanced", "Squares & Cubes", "Algebraic Expressions", "Mensuration"],
-  },
-  EVS: {
-    1: ["My Body", "Food We Eat", "Plants Around Us", "Animals & Pets"],
-    2: ["Our Family", "Water & Air", "Transport", "Safety Rules"],
-    3: ["Food & Nutrition", "Shelter", "Occupation", "Earth & Sky"],
-    4: ["States of India", "Water Conservation", "Plants & Animals", "Human Body Systems"],
-    5: ["Food Chain", "Natural Disasters", "Maps & Directions", "Our Environment"],
-  },
-  Science: {
-    6: ["Food & Nutrition", "Fibre to Fabric", "Sorting Materials", "Changes Around Us", "The Living World"],
-    7: ["Nutrition in Plants", "Nutrition in Animals", "Heat & Temperature", "Acids Bases Salts", "Physical & Chemical Changes"],
-    8: ["Crop Production", "Microorganisms", "Combustion & Flame", "Cell Structure", "Reproduction in Animals"],
-  },
-  "Social Science": {
-    6: ["What Where How & When", "Earliest People", "Motions of Earth", "Maps & Globes"],
-    7: ["Changes Through 1000 Years", "Inside Our Earth", "Our Changing Earth", "Democracy"],
-    8: ["Resources", "Land Soil Water", "Mineral & Power Resources", "The Indian Constitution"],
-  },
-};
+  cls <= 5 ? ["English", "Mathematics", "EVS"]
+           : ["English", "Mathematics", "Science", "Social Science"];
 
 const DIFFICULTIES = ["Easy", "Medium", "Hard"];
 const DIFF_STYLE = {
-  Easy:   { bg: "#d1fae5", color: "#065f46", border: "#6ee7b7" },
-  Medium: { bg: "#fef3c7", color: "#92400e", border: "#fcd34d" },
-  Hard:   { bg: "#fee2e2", color: "#7f1d1d", border: "#fca5a5" },
+  Easy:   { bg: "#dcfce7", color: "#15803d", border: "#86efac" },
+  Medium: { bg: "#fef9c3", color: "#92400e", border: "#fde047" },
+  Hard:   { bg: "#fee2e2", color: "#b91c1c", border: "#fca5a5" },
 };
-
 const CLASS_COLORS = ["#1d4ed8","#0891b2","#047857","#d97706","#dc2626","#7c3aed","#be185d","#0369a1"];
 
-let _id = 1;
-const INITIAL_SHEETS = (() => {
-  const sheets = [];
-  for (let cls = 1; cls <= 8; cls++) {
-    const subjects = SUBJECTS_BY_CLASS(cls);
-    for (const sub of subjects) {
-      const chaps = CHAPTERS[sub]?.[cls] || [];
-      for (const ch of chaps) {
-        for (const diff of DIFFICULTIES) {
-          sheets.push({
-            id: _id++, class: cls, subject: sub, chapter: ch, difficulty: diff,
-            title: `${ch} – ${diff} Practice`,
-            description: `Strengthen your understanding of ${ch} with ${diff.toLowerCase()}-level questions including MCQs, fill in the blanks, and short answers. Answer key included.`,
-            questions: diff === "Easy" ? 10 : diff === "Medium" ? 15 : 20,
-            pages: diff === "Easy" ? 2 : diff === "Medium" ? 3 : 4,
-            uploadedOn: "2025-12-15",
-          });
-        }
-      }
-    }
-  }
-  return sheets;
-})();
+const NCERT_STAGES = [
+  { cls:"1–5",  label:"Primary Stage",     subjects:["English","Mathematics","EVS","Hindi"],                                   desc:"Foundation concepts with illustrations and activities" },
+  { cls:"6–8",  label:"Middle Stage",      subjects:["English","Mathematics","Science","Social Science","Hindi"],               desc:"Core CBSE subjects with exercises and diagrams" },
+  { cls:"9–10", label:"Secondary Stage",   subjects:["English","Mathematics","Science","Social Science","Hindi"],               desc:"Board exam preparation content" },
+  { cls:"11–12",label:"Senior Secondary",  subjects:["Physics","Chemistry","Biology","Mathematics","Economics","History"],      desc:"Advanced subject knowledge for board exams" },
+];
 
+// ─── Utilities ───────────────────────────────────────────────────────────────
 const Toast = ({ msg, onClose }) => {
   useEffect(() => { const t = setTimeout(onClose, 3000); return () => clearTimeout(t); }, []);
   return (
-    <div style={{ position:"fixed", bottom:24, right:24, zIndex:9999, background:"#1e293b", color:"#fff", padding:"12px 20px", borderRadius:10, fontSize:14, display:"flex", alignItems:"center", gap:10, boxShadow:"0 4px 20px rgba(0,0,0,0.2)", maxWidth:320 }}>
-      <span style={{ fontSize:16 }}>✅</span>
-      <span>{msg}</span>
-      <button onClick={onClose} style={{ background:"none", border:"none", color:"#94a3b8", cursor:"pointer", marginLeft:8, fontSize:16 }}>×</button>
+    <div style={{ position:"fixed", bottom:20, right:20, zIndex:9999, background:"#1e293b",
+      color:"#fff", padding:"11px 18px", borderRadius:10, fontSize:13,
+      display:"flex", alignItems:"center", gap:10, maxWidth:340, boxShadow:"0 8px 24px rgba(0,0,0,0.25)" }}>
+      <span>✅</span>
+      <span style={{ flex:1 }}>{msg}</span>
+      <button onClick={onClose} style={{ background:"none", border:"none", color:"#94a3b8", cursor:"pointer", fontSize:16, padding:0 }}>×</button>
     </div>
   );
 };
 
-const Breadcrumb = ({ crumbs, onNav }) => (
-  <div style={{ display:"flex", flexWrap:"wrap", gap:4, alignItems:"center", marginBottom:20, fontSize:13, color:"var(--color-text-secondary)" }}>
+const Bc = ({ crumbs, onNav }) => (
+  <div style={{ display:"flex", flexWrap:"wrap", gap:4, alignItems:"center", marginBottom:20, fontSize:13 }}>
     {crumbs.map((c, i) => (
       <span key={i} style={{ display:"flex", alignItems:"center", gap:4 }}>
-        {i < crumbs.length - 1 ? (
-          <button onClick={() => onNav(c.action)} style={{ background:"none", border:"none", color:"#2563eb", cursor:"pointer", fontSize:13, padding:0, fontFamily:"inherit" }}>{c.label}</button>
-        ) : (
-          <span style={{ color:"var(--color-text-primary)", fontWeight:500 }}>{c.label}</span>
-        )}
-        {i < crumbs.length - 1 && <span style={{ color:"var(--color-text-tertiary)" }}>›</span>}
+        {i < crumbs.length - 1
+          ? <button onClick={() => onNav(c.a)} style={{ background:"none", border:"none", color:"#2563eb", cursor:"pointer", fontSize:13, padding:0 }}>{c.l}</button>
+          : <span style={{ color:"var(--color-text-primary,#0f172a)", fontWeight:500 }}>{c.l}</span>}
+        {i < crumbs.length - 1 && <span style={{ color:"#cbd5e1" }}>›</span>}
       </span>
     ))}
   </div>
 );
 
+// ─── Style tokens ────────────────────────────────────────────────────────────
+const T = {
+  page:  { minHeight:"100vh", background:"var(--color-background-tertiary,#f8fafc)", fontFamily:"var(--font-sans,system-ui,sans-serif)" },
+  hdr:   { background:"var(--color-background-primary,#fff)", borderBottom:"0.5px solid var(--color-border-tertiary,#e2e8f0)",
+           padding:"0 20px", display:"flex", alignItems:"center", justifyContent:"space-between",
+           height:56, position:"sticky", top:0, zIndex:100 },
+  main:  { maxWidth:1100, margin:"0 auto", padding:"28px 20px" },
+  H2:    { fontSize:20, fontWeight:600, color:"var(--color-text-primary,#0f172a)", marginBottom:6, letterSpacing:"-0.4px" },
+  sub:   { fontSize:14, color:"var(--color-text-secondary,#64748b)", marginBottom:24 },
+  card:  { background:"var(--color-background-primary,#fff)", border:"0.5px solid var(--color-border-tertiary,#e2e8f0)", borderRadius:12, padding:"18px 20px" },
+  bp:    { background:"#1e40af", color:"#fff", border:"none", padding:"9px 18px", borderRadius:8, fontSize:13, fontWeight:500, cursor:"pointer" },
+  bs:    { background:"none", color:"var(--color-text-secondary,#475569)", border:"0.5px solid var(--color-border-secondary,#e2e8f0)", padding:"9px 18px", borderRadius:8, fontSize:13, cursor:"pointer" },
+  inp:   { width:"100%", padding:"9px 12px", borderRadius:8, border:"0.5px solid var(--color-border-secondary,#e2e8f0)", fontSize:13, background:"var(--color-background-primary,#fff)", color:"var(--color-text-primary,#0f172a)", boxSizing:"border-box" },
+  sel:   { padding:"9px 12px", borderRadius:8, border:"0.5px solid var(--color-border-secondary,#e2e8f0)", fontSize:13, background:"var(--color-background-primary,#fff)", color:"var(--color-text-primary,#0f172a)" },
+  chip:  { display:"inline-flex", alignItems:"center", gap:4, padding:"3px 9px", borderRadius:20, fontSize:11, background:"var(--color-background-secondary,#f1f5f9)", border:"0.5px solid var(--color-border-tertiary,#e2e8f0)", color:"var(--color-text-secondary,#64748b)" },
+  badge: (s) => ({ display:"inline-flex", alignItems:"center", padding:"2px 9px", borderRadius:20, fontSize:11, fontWeight:500, border:`0.5px solid ${s.border}`, background:s.bg, color:s.color }),
+  nb:    { padding:"6px 14px", borderRadius:6, border:"0.5px solid var(--color-border-secondary,#e2e8f0)", background:"none", fontSize:13, cursor:"pointer", color:"var(--color-text-secondary,#64748b)" },
+  nba:   { background:"#1e40af", color:"#fff", border:"0.5px solid #1e40af" },
+};
+
+const Hdr = ({ nav, active }) => (
+  <header style={T.hdr}>
+    <div onClick={() => nav("home")} style={{ display:"flex", alignItems:"center", gap:10, cursor:"pointer" }}>
+      <div style={{ width:30, height:30, borderRadius:7, background:"#1e40af", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14 }}>📚</div>
+      <span style={{ fontWeight:600, fontSize:15, color:"var(--color-text-primary,#0f172a)", letterSpacing:"-0.3px" }}>CBSE Practice Hub</span>
+    </div>
+    <div style={{ display:"flex", gap:6 }}>
+      <button onClick={() => nav("search")} style={{ ...T.nb, ...(active==="search" ? T.nba:{}) }}>🔍 Search</button>
+      <button onClick={() => nav("ebooks")} style={{ ...T.nb, ...(active==="ebooks" ? T.nba:{}) }}>📗 Ebooks</button>
+    </div>
+  </header>
+);
+
+const openPDF = (ws, showToast) => {
+  if (ws.pdf_url) {
+    window.open(ws.pdf_url, "_blank", "noopener,noreferrer");
+    showToast(`Opening "${ws.title}"…`);
+  } else {
+    showToast("PDF link not available");
+  }
+};
+
+// ════════════════════════════════════════════════════════════════════════════
 export default function CBSEPracticeHub() {
-  const [view, setView] = useState("home");
-  const [selClass, setSelClass] = useState(null);
-  const [selSubject, setSelSubject] = useState(null);
-  const [selChapter, setSelChapter] = useState(null);
-  const [worksheets, setWorksheets] = useState(INITIAL_SHEETS);
-  const [toast, setToast] = useState(null);
-  const [search, setSearch] = useState("");
-  const [fClass, setFClass] = useState("");
-  const [fSubject, setFSubject] = useState("");
-  const [fDiff, setFDiff] = useState("");
-  const [adminTab, setAdminTab] = useState("list");
-  const [adminSearch, setAdminSearch] = useState("");
-  const [editId, setEditId] = useState(null);
-  const [form, setForm] = useState({ class: "", subject: "", chapter: "", difficulty: "Easy", title: "", description: "", questions: 10 });
-  const [formErrors, setFormErrors] = useState({});
+  const [view,   setView]       = useState("home");
+  const [cls,    setCls]        = useState(null);
+  const [subj,   setSubj]       = useState(null);
+  const [toast,  setToast]      = useState(null);
+  const [q,      setQ]          = useState("");
+  const [fCls,   setFCls]       = useState("");
+  const [fSub,   setFSub]       = useState("");
+  const [fDiff,  setFDiff]      = useState("");
 
-  const showToast = (msg) => setToast(msg);
+  const toast2 = (m) => setToast(m);
 
-  const handleDownload = (ws) => {
-    showToast(`Downloading "${ws.title}" (${ws.questions} questions, ${ws.pages} pages)`);
+  const nav = (a) => {
+    if      (a === "home")    { setView("home");    setCls(null); setSubj(null); }
+    else if (a === "class")   { setView("class");   setSubj(null); }
+    else if (a === "subject") { setView("subject"); }
+    else                      { setView(a); }
   };
 
-  const filteredSearchSheets = useMemo(() => {
-    return worksheets.filter(ws => {
-      const q = search.toLowerCase();
-      const matchSearch = !q || ws.title.toLowerCase().includes(q) || ws.chapter.toLowerCase().includes(q) || ws.subject.toLowerCase().includes(q);
-      const matchClass = !fClass || ws.class === parseInt(fClass);
-      const matchSubject = !fSubject || ws.subject === fSubject;
-      const matchDiff = !fDiff || ws.difficulty === fDiff;
-      return matchSearch && matchClass && matchSubject && matchDiff;
-    });
-  }, [worksheets, search, fClass, fSubject, fDiff]);
+  const subjWS = useMemo(() =>
+    cls && subj ? WORKSHEETS.filter(w => w.class === cls && w.subject === subj) : [],
+    [cls, subj]);
 
-  const availableChapters = useMemo(() => {
-    if (selClass && selSubject) return CHAPTERS[selSubject]?.[selClass] || [];
-    return [];
-  }, [selClass, selSubject]);
+  const searchWS = useMemo(() =>
+    WORKSHEETS.filter(w => {
+      const lq = q.toLowerCase();
+      return (
+        (!lq || w.title.toLowerCase().includes(lq) || w.subject.toLowerCase().includes(lq) || `class ${w.class}`.includes(lq)) &&
+        (!fCls  || w.class      === parseInt(fCls)) &&
+        (!fSub  || w.subject    === fSub) &&
+        (!fDiff || w.difficulty === fDiff)
+      );
+    }),
+    [q, fCls, fSub, fDiff]);
 
-  const chapterWorksheets = useMemo(() => {
-    if (!selChapter) return [];
-    return worksheets.filter(ws => ws.class === selClass && ws.subject === selSubject && ws.chapter === selChapter);
-  }, [worksheets, selClass, selSubject, selChapter]);
-
-  const nav = (action) => {
-    if (action === "home") { setView("home"); setSelClass(null); setSelSubject(null); setSelChapter(null); }
-    else if (action === "class") { setView("class"); setSelSubject(null); setSelChapter(null); }
-    else if (action === "subject") { setView("subject"); setSelChapter(null); }
-    else if (action === "chapter") setView("chapter");
-    else if (action === "search") setView("search");
-    else if (action === "admin") setView("admin");
-  };
-
-  const validateForm = () => {
-    const e = {};
-    if (!form.class) e.class = "Required";
-    if (!form.subject) e.subject = "Required";
-    if (!form.chapter.trim()) e.chapter = "Required";
-    if (!form.title.trim()) e.title = "Required";
-    setFormErrors(e);
-    return Object.keys(e).length === 0;
-  };
-
-  const handleAdminSubmit = () => {
-    if (!validateForm()) return;
-    if (editId) {
-      setWorksheets(ws => ws.map(w => w.id === editId ? { ...w, ...form, class: parseInt(form.class) } : w));
-      showToast("Worksheet updated successfully");
-      setEditId(null);
-    } else {
-      const newWs = { ...form, id: Date.now(), class: parseInt(form.class), questions: parseInt(form.questions), pages: 2, uploadedOn: new Date().toISOString().split("T")[0] };
-      setWorksheets(ws => [newWs, ...ws]);
-      showToast("Worksheet uploaded successfully");
-    }
-    setForm({ class: "", subject: "", chapter: "", difficulty: "Easy", title: "", description: "", questions: 10 });
-    setAdminTab("list");
-  };
-
-  const handleEdit = (ws) => {
-    setForm({ class: String(ws.class), subject: ws.subject, chapter: ws.chapter, difficulty: ws.difficulty, title: ws.title, description: ws.description, questions: ws.questions });
-    setEditId(ws.id);
-    setAdminTab("upload");
-  };
-
-  const handleDelete = (id) => {
-    setWorksheets(ws => ws.filter(w => w.id !== id));
-    showToast("Worksheet deleted");
-  };
-
-  const adminSheets = useMemo(() => {
-    const q = adminSearch.toLowerCase();
-    return worksheets.filter(ws => !q || ws.title.toLowerCase().includes(q) || ws.chapter.toLowerCase().includes(q) || ws.subject.toLowerCase().includes(q) || String(ws.class).includes(q));
-  }, [worksheets, adminSearch]);
-
-  const S = {
-    page: { minHeight:"100vh", background:"var(--color-background-tertiary)", fontFamily:"var(--font-sans)" },
-    header: { background:"var(--color-background-primary)", borderBottom:"0.5px solid var(--color-border-tertiary)", padding:"0 24px", display:"flex", alignItems:"center", justifyContent:"space-between", height:60, position:"sticky", top:0, zIndex:100 },
-    logo: { display:"flex", alignItems:"center", gap:10, cursor:"pointer" },
-    logoIcon: { width:32, height:32, borderRadius:8, background:"#1e40af", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, flexShrink:0 },
-    logoText: { fontWeight:600, fontSize:16, color:"var(--color-text-primary)", letterSpacing:"-0.3px" },
-    nav: { display:"flex", gap:6 },
-    navBtn: { padding:"6px 14px", borderRadius:6, border:"0.5px solid var(--color-border-secondary)", background:"none", fontSize:13, cursor:"pointer", fontFamily:"var(--font-sans)", color:"var(--color-text-secondary)" },
-    navBtnActive: { background:"#1e40af", color:"#fff", border:"0.5px solid #1e40af" },
-    main: { maxWidth:1200, margin:"0 auto", padding:"32px 24px" },
-    sectionTitle: { fontSize:22, fontWeight:500, color:"var(--color-text-primary)", marginBottom:8, letterSpacing:"-0.5px" },
-    sectionSub: { fontSize:15, color:"var(--color-text-secondary)", marginBottom:28 },
-    card: { background:"var(--color-background-primary)", border:"0.5px solid var(--color-border-tertiary)", borderRadius:12, padding:"20px 22px", cursor:"pointer", transition:"border-color 0.15s" },
-    cardHover: { borderColor:"var(--color-border-primary)" },
-    grid4: { display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))", gap:14 },
-    grid3: { display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))", gap:16 },
-    grid2: { display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))", gap:16 },
-    badge: (style) => ({ display:"inline-flex", alignItems:"center", padding:"3px 10px", borderRadius:20, fontSize:12, fontWeight:500, border:`0.5px solid ${style.border}`, background:style.bg, color:style.color }),
-    input: { width:"100%", padding:"9px 12px", borderRadius:8, border:"0.5px solid var(--color-border-secondary)", fontSize:14, background:"var(--color-background-primary)", color:"var(--color-text-primary)", fontFamily:"var(--font-sans)", boxSizing:"border-box" },
-    select: { padding:"9px 12px", borderRadius:8, border:"0.5px solid var(--color-border-secondary)", fontSize:14, background:"var(--color-background-primary)", color:"var(--color-text-primary)", fontFamily:"var(--font-sans)", cursor:"pointer" },
-    btnPrimary: { background:"#1e40af", color:"#fff", border:"none", padding:"10px 20px", borderRadius:8, fontSize:14, fontWeight:500, cursor:"pointer", fontFamily:"var(--font-sans)" },
-    btnSecondary: { background:"none", color:"var(--color-text-secondary)", border:"0.5px solid var(--color-border-secondary)", padding:"10px 20px", borderRadius:8, fontSize:14, cursor:"pointer", fontFamily:"var(--font-sans)" },
-    btnSm: (color) => ({ background:color||"#1e40af", color:"#fff", border:"none", padding:"7px 14px", borderRadius:6, fontSize:12, cursor:"pointer", fontFamily:"var(--font-sans)", fontWeight:500 }),
-    label: { fontSize:13, fontWeight:500, color:"var(--color-text-secondary)", marginBottom:5, display:"block" },
-    formRow: { marginBottom:16 },
-    errorText: { fontSize:12, color:"#dc2626", marginTop:4 },
-    chip: { display:"inline-flex", alignItems:"center", gap:4, padding:"4px 10px", borderRadius:20, fontSize:12, background:"var(--color-background-secondary)", border:"0.5px solid var(--color-border-tertiary)", color:"var(--color-text-secondary)" },
-  };
-
+  // ── HOME ──────────────────────────────────────────────────────────────────
   if (view === "home") return (
-    <div style={S.page}>
-      <header style={S.header}>
-        <div style={S.logo} onClick={() => nav("home")}>
-          <div style={S.logoIcon}>📚</div>
-          <span style={S.logoText}>CBSE Practice Hub</span>
-        </div>
-        <div style={S.nav}>
-          <button style={S.navBtn} onClick={() => nav("search")}>🔍 Search</button>
-          <button style={{ ...S.navBtn, ...S.navBtnActive }} onClick={() => nav("admin")}>⚙ Admin</button>
-        </div>
-      </header>
+    <div style={T.page}>
+      <Hdr nav={nav} active="home" />
 
-      <div style={{ background:"linear-gradient(135deg,#1e3a8a 0%,#1e40af 50%,#1d4ed8 100%)", padding:"72px 24px", textAlign:"center" }}>
-        <div style={{ display:"inline-flex", alignItems:"center", gap:6, background:"rgba(255,255,255,0.15)", border:"0.5px solid rgba(255,255,255,0.3)", borderRadius:20, padding:"5px 14px", fontSize:13, color:"rgba(255,255,255,0.9)", marginBottom:20 }}>
+      <div style={{ background:"linear-gradient(135deg,#1e3a8a,#1e40af 55%,#2563eb)", padding:"60px 24px", textAlign:"center" }}>
+        <div style={{ display:"inline-flex", alignItems:"center", gap:6, background:"rgba(255,255,255,0.15)",
+          border:"0.5px solid rgba(255,255,255,0.3)", borderRadius:20, padding:"4px 14px", fontSize:12,
+          color:"rgba(255,255,255,0.9)", marginBottom:16 }}>
           ✨ Updated as per CBSE 2025–26 Syllabus
         </div>
-        <h1 style={{ fontSize:42, fontWeight:600, color:"#fff", margin:"0 0 16px", letterSpacing:"-1px", lineHeight:1.1 }}>
-          Practice Smarter with<br/>
-          <span style={{ color:"#fbbf24" }}>CBSE Worksheets</span>
+        <h1 style={{ fontSize:36, fontWeight:700, color:"#fff", margin:"0 0 14px", letterSpacing:"-1px", lineHeight:1.15 }}>
+          Practice Smarter with<br/><span style={{ color:"#fbbf24" }}>CBSE Worksheets</span>
         </h1>
-        <p style={{ fontSize:18, color:"rgba(255,255,255,0.75)", margin:"0 0 32px", maxWidth:540, marginLeft:"auto", marginRight:"auto" }}>
-          Free printable worksheets for Class 1–8. All subjects. All chapters. Three difficulty levels with answer keys.
+        <p style={{ fontSize:16, color:"rgba(255,255,255,0.75)", margin:"0 0 28px", maxWidth:480, marginLeft:"auto", marginRight:"auto", lineHeight:1.6 }}>
+          Free printable PDFs for Class 1–8 · All subjects · Easy, Medium & Hard · 25 questions each · Answer keys included
         </p>
-        <div style={{ display:"flex", gap:12, justifyContent:"center", flexWrap:"wrap" }}>
-          <button onClick={() => { document.getElementById("classes-grid")?.scrollIntoView({ behavior:"smooth" }); }} style={{ background:"#fbbf24", color:"#1e3a8a", border:"none", padding:"13px 28px", borderRadius:8, fontSize:15, fontWeight:600, cursor:"pointer", fontFamily:"var(--font-sans)" }}>Browse by Class ↓</button>
-          <button onClick={() => nav("search")} style={{ background:"rgba(255,255,255,0.15)", color:"#fff", border:"0.5px solid rgba(255,255,255,0.4)", padding:"13px 28px", borderRadius:8, fontSize:15, cursor:"pointer", fontFamily:"var(--font-sans)" }}>Search Worksheets</button>
+        <div style={{ display:"flex", gap:10, justifyContent:"center", flexWrap:"wrap" }}>
+          <button onClick={() => document.getElementById("cg")?.scrollIntoView({ behavior:"smooth" })}
+            style={{ background:"#fbbf24", color:"#1e3a8a", border:"none", padding:"12px 24px", borderRadius:8, fontSize:14, fontWeight:700, cursor:"pointer" }}>
+            Browse by Class ↓
+          </button>
+          <button onClick={() => nav("search")}
+            style={{ background:"rgba(255,255,255,0.15)", color:"#fff", border:"0.5px solid rgba(255,255,255,0.4)", padding:"12px 24px", borderRadius:8, fontSize:14, cursor:"pointer" }}>
+            Search Worksheets
+          </button>
         </div>
       </div>
 
-      <div style={{ background:"var(--color-background-primary)", borderBottom:"0.5px solid var(--color-border-tertiary)" }}>
-        <div style={{ maxWidth:1200, margin:"0 auto", padding:"24px", display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))", gap:0 }}>
-          {[
-            { icon:"📥", label:"Free Downloads", desc:"All worksheets are 100% free" },
-            { icon:"📚", label:"All Subjects", desc:"English, Math, Science & more" },
-            { icon:"🎯", label:"3 Difficulty Levels", desc:"Easy, Medium & Hard" },
-            { icon:"✅", label:"Answer Keys", desc:"Every worksheet includes answers" },
-            { icon:"🖨️", label:"Print-Ready PDFs", desc:"Formatted for A4 printing" },
-          ].map((f, i) => (
-            <div key={i} style={{ padding:"16px 20px", textAlign:"center", borderRight: i < 4 ? "0.5px solid var(--color-border-tertiary)" : "none" }}>
-              <div style={{ fontSize:22, marginBottom:6 }}>{f.icon}</div>
-              <div style={{ fontSize:13, fontWeight:500, color:"var(--color-text-primary)", marginBottom:3 }}>{f.label}</div>
-              <div style={{ fontSize:12, color:"var(--color-text-secondary)" }}>{f.desc}</div>
+      {/* Feature strip */}
+      <div style={{ background:"var(--color-background-primary,#fff)", borderBottom:"0.5px solid var(--color-border-tertiary,#e2e8f0)" }}>
+        <div style={{ maxWidth:1100, margin:"0 auto", padding:"0 20px", display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))" }}>
+          {[["📥","Free Downloads","100% free, no sign-up"],["📚","All Subjects","English, Math, Science & more"],
+            ["🎯","3 Difficulty Levels","Easy, Medium & Hard"],["✅","Answer Keys","Every PDF has answers"],
+            ["🖨️","Print-Ready A4","Download & print instantly"]].map(([ic,lb,ds],i,arr) => (
+            <div key={i} style={{ padding:"14px", textAlign:"center", borderRight: i<arr.length-1 ? "0.5px solid var(--color-border-tertiary,#e2e8f0)":"none" }}>
+              <div style={{ fontSize:20, marginBottom:5 }}>{ic}</div>
+              <div style={{ fontSize:12, fontWeight:600, color:"var(--color-text-primary,#0f172a)", marginBottom:2 }}>{lb}</div>
+              <div style={{ fontSize:11, color:"var(--color-text-secondary,#64748b)" }}>{ds}</div>
             </div>
           ))}
         </div>
       </div>
 
-      <div style={{ ...S.main }}>
-        <div id="classes-grid">
-          <h2 style={S.sectionTitle}>Browse by Class</h2>
-          <p style={S.sectionSub}>Choose your class to find worksheets for all subjects and chapters</p>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))", gap:14, marginBottom:48 }}>
-            {[1,2,3,4,5,6,7,8].map((cls, i) => {
-              const subjects = SUBJECTS_BY_CLASS(cls);
-              const count = worksheets.filter(w => w.class === cls).length;
+      <div style={T.main}>
+        <div id="cg" style={{ scrollMarginTop:64 }}>
+          <h2 style={T.H2}>Browse by Class</h2>
+          <p style={T.sub}>Select your class to see all subjects and download practice sets A–E</p>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))", gap:12, marginBottom:40 }}>
+            {[1,2,3,4,5,6,7,8].map((c, i) => {
+              const count = WORKSHEETS.filter(w => w.class === c).length;
               return (
-                <div key={cls} onClick={() => { setSelClass(cls); setView("class"); }} style={{ ...S.card, textAlign:"center", padding:"24px 16px" }}
-                  onMouseEnter={e => e.currentTarget.style.borderColor="#93c5fd"}
-                  onMouseLeave={e => e.currentTarget.style.borderColor="var(--color-border-tertiary)"}>
-                  <div style={{ width:48, height:48, borderRadius:12, background:`${CLASS_COLORS[i]}18`, border:`1.5px solid ${CLASS_COLORS[i]}40`, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 12px", fontSize:20, fontWeight:700, color:CLASS_COLORS[i] }}>{cls}</div>
-                  <div style={{ fontWeight:600, fontSize:15, color:"var(--color-text-primary)", marginBottom:4 }}>Class {cls}</div>
-                  <div style={{ fontSize:11, color:"var(--color-text-secondary)", marginBottom:8 }}>{subjects.length} subjects</div>
-                  <div style={{ fontSize:11, background:"#eff6ff", color:"#1d4ed8", padding:"3px 8px", borderRadius:20, display:"inline-block", border:"0.5px solid #bfdbfe" }}>{count} sheets</div>
+                <div key={c} onClick={() => { setCls(c); nav("class"); }}
+                  style={{ ...T.card, textAlign:"center", padding:"20px 12px", cursor:"pointer", transition:"all 0.15s" }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = CLASS_COLORS[i]; e.currentTarget.style.transform = "translateY(-2px)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--color-border-tertiary,#e2e8f0)"; e.currentTarget.style.transform = "none"; }}>
+                  <div style={{ width:44, height:44, borderRadius:10, background:`${CLASS_COLORS[i]}18`,
+                    border:`1.5px solid ${CLASS_COLORS[i]}40`, display:"flex", alignItems:"center", justifyContent:"center",
+                    margin:"0 auto 10px", fontSize:18, fontWeight:700, color:CLASS_COLORS[i] }}>{c}</div>
+                  <div style={{ fontWeight:600, fontSize:14, color:"var(--color-text-primary,#0f172a)", marginBottom:3 }}>Class {c}</div>
+                  <div style={{ fontSize:11, color:"var(--color-text-secondary,#64748b)", marginBottom:6 }}>{SUBJECTS_BY_CLASS(c).length} subjects</div>
+                  <span style={{ fontSize:10, background:"#eff6ff", color:"#1d4ed8", padding:"2px 7px", borderRadius:10, border:"0.5px solid #bfdbfe" }}>{count} sheets</span>
                 </div>
               );
             })}
           </div>
         </div>
 
-        <div style={{ background:"var(--color-background-secondary)", borderRadius:14, padding:"28px 28px 24px", border:"0.5px solid var(--color-border-tertiary)", marginBottom:48 }}>
-          <h2 style={{ ...S.sectionTitle, marginBottom:4 }}>📊 Quick Stats</h2>
-          <p style={{ ...S.sectionSub, marginBottom:20 }}>What's available on the platform right now</p>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))", gap:12 }}>
-            {[
-              { label:"Total Worksheets", value:worksheets.length },
-              { label:"Classes Covered", value:"1–8" },
-              { label:"Subjects", value:5 },
-              { label:"Chapters", value:"150+" },
-              { label:"Questions", value:"3000+" },
-            ].map(s => (
-              <div key={s.label} style={{ background:"var(--color-background-primary)", border:"0.5px solid var(--color-border-tertiary)", borderRadius:8, padding:"14px 16px", textAlign:"center" }}>
-                <div style={{ fontSize:24, fontWeight:600, color:"#1e40af", marginBottom:4 }}>{s.value}</div>
-                <div style={{ fontSize:12, color:"var(--color-text-secondary)" }}>{s.label}</div>
+        {/* Stats */}
+        <div style={{ background:"var(--color-background-secondary,#f1f5f9)", borderRadius:12, padding:"22px 24px", border:"0.5px solid var(--color-border-tertiary,#e2e8f0)", marginBottom:36 }}>
+          <h2 style={{ ...T.H2, marginBottom:4 }}>📊 Platform Stats</h2>
+          <p style={{ ...T.sub, marginBottom:16 }}>Everything available for free</p>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))", gap:10 }}>
+            {[["Total PDFs",WORKSHEETS.length],["Classes","1 – 8"],["Subjects",5],["Sets per Subject","A – E"],["Questions per Sheet",25]].map(([l,v]) => (
+              <div key={l} style={{ background:"var(--color-background-primary,#fff)", border:"0.5px solid var(--color-border-tertiary,#e2e8f0)", borderRadius:8, padding:"12px", textAlign:"center" }}>
+                <div style={{ fontSize:22, fontWeight:700, color:"#1e40af", marginBottom:3 }}>{v}</div>
+                <div style={{ fontSize:11, color:"var(--color-text-secondary,#64748b)" }}>{l}</div>
               </div>
             ))}
           </div>
         </div>
 
-        <h2 style={S.sectionTitle}>How It Works</h2>
-        <p style={{ ...S.sectionSub, marginBottom:24 }}>Three simple steps to get your practice worksheet</p>
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))", gap:16 }}>
-          {[
-            { step:"01", title:"Choose Your Class", desc:"Select your class from 1 to 8 to see all available subjects", icon:"🎓" },
-            { step:"02", title:"Pick a Chapter", desc:"Navigate to your subject and find the chapter you're studying", icon:"📋" },
-            { step:"03", title:"Download & Practice", desc:"Download your preferred difficulty level and start practicing", icon:"📥" },
-          ].map(s => (
-            <div key={s.step} style={{ ...S.card, display:"flex", gap:16 }}>
-              <div style={{ fontSize:28, flexShrink:0 }}>{s.icon}</div>
+        {/* Steps */}
+        <h2 style={T.H2}>How It Works</h2>
+        <p style={{ ...T.sub, marginBottom:18 }}>Two steps to your practice worksheet</p>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))", gap:14 }}>
+          {[["🎓","01","Choose Your Class","Select from Class 1 to 8"],
+            ["📚","02","Pick a Subject","Browse English, Maths, Science and more"],
+            ["📥","03","Download PDF","Choose your difficulty set and download instantly"]].map(([ic,n,t,d]) => (
+            <div key={n} style={{ ...T.card, display:"flex", gap:14, cursor:"default" }}>
+              <div style={{ fontSize:26, flexShrink:0 }}>{ic}</div>
               <div>
-                <div style={{ fontSize:11, color:"#2563eb", fontWeight:600, marginBottom:4, letterSpacing:"0.5px" }}>STEP {s.step}</div>
-                <div style={{ fontSize:14, fontWeight:500, color:"var(--color-text-primary)", marginBottom:6 }}>{s.title}</div>
-                <div style={{ fontSize:13, color:"var(--color-text-secondary)", lineHeight:1.5 }}>{s.desc}</div>
+                <div style={{ fontSize:10, color:"#2563eb", fontWeight:700, marginBottom:4, letterSpacing:"0.5px" }}>STEP {n}</div>
+                <div style={{ fontSize:14, fontWeight:600, color:"var(--color-text-primary,#0f172a)", marginBottom:4 }}>{t}</div>
+                <div style={{ fontSize:12, color:"var(--color-text-secondary,#64748b)", lineHeight:1.5 }}>{d}</div>
               </div>
             </div>
           ))}
         </div>
       </div>
 
-      <footer style={{ borderTop:"0.5px solid var(--color-border-tertiary)", background:"var(--color-background-primary)", padding:"24px", textAlign:"center", fontSize:13, color:"var(--color-text-secondary)" }}>
-        © 2025 CBSE Practice Hub · Free educational resources for CBSE students · Classes 1–8
-      </footer>
+      <div style={{ borderTop:"0.5px solid var(--color-border-tertiary,#e2e8f0)", padding:"18px 20px", textAlign:"center", fontSize:12, color:"var(--color-text-secondary,#64748b)", background:"var(--color-background-primary,#fff)" }}>
+        © 2025 CBSE Practice Hub · Free educational resources · Classes 1–8
+      </div>
       {toast && <Toast msg={toast} onClose={() => setToast(null)} />}
     </div>
   );
 
+  // ── CLASS VIEW — pick subject ──────────────────────────────────────────────
   if (view === "class") return (
-    <div style={S.page}>
-      <header style={S.header}>
-        <div style={S.logo} onClick={() => nav("home")}>
-          <div style={S.logoIcon}>📚</div>
-          <span style={S.logoText}>CBSE Practice Hub</span>
-        </div>
-        <div style={S.nav}>
-          <button style={S.navBtn} onClick={() => nav("search")}>🔍 Search</button>
-          <button style={{ ...S.navBtn, ...S.navBtnActive }} onClick={() => nav("admin")}>⚙ Admin</button>
-        </div>
-      </header>
-      <div style={S.main}>
-        <Breadcrumb crumbs={[{ label:"Home", action:"home" }, { label:`Class ${selClass}` }]} onNav={nav} />
-        <h2 style={S.sectionTitle}>Class {selClass} — Subjects</h2>
-        <p style={S.sectionSub}>Choose a subject to browse chapters and worksheets</p>
-        <div style={S.grid3}>
-          {SUBJECTS_BY_CLASS(selClass).map(sub => {
-            const m = SUBJECT_META[sub];
-            const count = worksheets.filter(w => w.class === selClass && w.subject === sub).length;
-            const chapCount = (CHAPTERS[sub]?.[selClass] || []).length;
+    <div style={T.page}>
+      <Hdr nav={nav} active="" />
+      <div style={T.main}>
+        <Bc crumbs={[{l:"Home",a:"home"},{l:`Class ${cls}`}]} onNav={nav} />
+        <h2 style={T.H2}>Class {cls} — Choose a Subject</h2>
+        <p style={T.sub}>Each subject has 15 worksheets: 5 unique sets at Easy, Medium and Hard</p>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))", gap:14 }}>
+          {SUBJECTS_BY_CLASS(cls).map(s => {
+            const m     = SUBJECT_META[s];
+            const count = WORKSHEETS.filter(w => w.class === cls && w.subject === s).length;
             return (
-              <div key={sub} onClick={() => { setSelSubject(sub); setView("subject"); }} style={{ ...S.card, border:`0.5px solid ${m.border}`, background:m.bg }}
-                onMouseEnter={e => e.currentTarget.style.transform="translateY(-2px)"}
-                onMouseLeave={e => e.currentTarget.style.transform="none"}>
-                <div style={{ fontSize:36, marginBottom:12 }}>{m.icon}</div>
-                <div style={{ fontSize:18, fontWeight:600, color:m.color, marginBottom:6 }}>{sub}</div>
-                <div style={{ fontSize:13, color:`${m.color}bb`, marginBottom:14 }}>{chapCount} chapters · {count} worksheets</div>
-                <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+              <div key={s} onClick={() => { setSubj(s); nav("subject"); }}
+                style={{ ...T.card, border:`0.5px solid ${m.border}`, background:m.bg, cursor:"pointer", transition:"all 0.15s" }}
+                onMouseEnter={e => e.currentTarget.style.transform = "translateY(-2px)"}
+                onMouseLeave={e => e.currentTarget.style.transform = "none"}>
+                <div style={{ fontSize:32, marginBottom:10 }}>{m.icon}</div>
+                <div style={{ fontSize:17, fontWeight:700, color:m.color, marginBottom:5 }}>{s}</div>
+                <div style={{ fontSize:12, color:`${m.color}99`, marginBottom:12 }}>{count} worksheets · 5 sets per difficulty</div>
+                <div style={{ display:"flex", gap:5 }}>
                   {DIFFICULTIES.map(d => (
-                    <span key={d} style={{ fontSize:11, padding:"2px 8px", borderRadius:10, background:"rgba(255,255,255,0.6)", color:m.color, border:`0.5px solid ${m.border}` }}>{d}</span>
+                    <span key={d} style={{ fontSize:10, padding:"2px 8px", borderRadius:10, background:"rgba(255,255,255,0.65)", color:m.color, border:`0.5px solid ${m.border}` }}>{d}</span>
                   ))}
                 </div>
               </div>
             );
           })}
         </div>
-        <div style={{ marginTop:32, padding:"20px", background:"var(--color-background-secondary)", borderRadius:10, border:"0.5px solid var(--color-border-tertiary)", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:12 }}>
-          <div>
-            <div style={{ fontSize:14, fontWeight:500, color:"var(--color-text-primary)", marginBottom:4 }}>Looking for something specific?</div>
-            <div style={{ fontSize:13, color:"var(--color-text-secondary)" }}>Search across all chapters and subjects in Class {selClass}</div>
-          </div>
-          <button onClick={() => { setFClass(String(selClass)); nav("search"); }} style={S.btnPrimary}>Search Class {selClass} →</button>
-        </div>
       </div>
       {toast && <Toast msg={toast} onClose={() => setToast(null)} />}
     </div>
   );
 
-  if (view === "subject") return (
-    <div style={S.page}>
-      <header style={S.header}>
-        <div style={S.logo} onClick={() => nav("home")}>
-          <div style={S.logoIcon}>📚</div>
-          <span style={S.logoText}>CBSE Practice Hub</span>
-        </div>
-        <div style={S.nav}>
-          <button style={S.navBtn} onClick={() => nav("search")}>🔍 Search</button>
-          <button style={{ ...S.navBtn, ...S.navBtnActive }} onClick={() => nav("admin")}>⚙ Admin</button>
-        </div>
-      </header>
-      <div style={S.main}>
-        <Breadcrumb crumbs={[{ label:"Home", action:"home" }, { label:`Class ${selClass}`, action:"class" }, { label:selSubject }]} onNav={nav} />
-        <div style={{ display:"flex", alignItems:"center", gap:14, marginBottom:8 }}>
-          <span style={{ fontSize:32 }}>{SUBJECT_META[selSubject]?.icon}</span>
-          <div>
-            <h2 style={{ ...S.sectionTitle, marginBottom:2 }}>{selSubject}</h2>
-            <p style={{ margin:0, fontSize:14, color:"var(--color-text-secondary)" }}>Class {selClass} · {availableChapters.length} chapters · {worksheets.filter(w => w.class===selClass && w.subject===selSubject).length} worksheets</p>
-          </div>
-        </div>
-        <div style={{ marginBottom:28, marginTop:20 }}>
-          <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
-            <div style={{ position:"relative", flex:1, minWidth:200 }}>
-              <span style={{ position:"absolute", left:12, top:"50%", transform:"translateY(-50%)", fontSize:14, color:"var(--color-text-tertiary)" }}>🔍</span>
-              <input style={{ ...S.input, paddingLeft:36 }} placeholder="Search chapters..." value={search} onChange={e => setSearch(e.target.value)} />
+  // ── SUBJECT VIEW — sets grouped by difficulty ──────────────────────────────
+  if (view === "subject") {
+    const m = SUBJECT_META[subj] || {};
+    return (
+      <div style={T.page}>
+        <Hdr nav={nav} active="" />
+        <div style={T.main}>
+          <Bc crumbs={[{l:"Home",a:"home"},{l:`Class ${cls}`,a:"class"},{l:subj}]} onNav={nav} />
+
+          <div style={{ display:"flex", gap:14, alignItems:"center", marginBottom:8 }}>
+            <span style={{ fontSize:30 }}>{m.icon}</span>
+            <div>
+              <h2 style={{ ...T.H2, marginBottom:2 }}>{subj} — Class {cls}</h2>
+              <p style={{ margin:0, fontSize:13, color:"var(--color-text-secondary,#64748b)" }}>
+                {subjWS.length} worksheets · 5 sets per difficulty · {subjWS[0]?.question_count || 25} questions each · Answer key included
+              </p>
             </div>
-            <select style={S.select} value={fDiff} onChange={e => setFDiff(e.target.value)}>
-              <option value="">All Difficulties</option>
-              {DIFFICULTIES.map(d => <option key={d}>{d}</option>)}
-            </select>
           </div>
-        </div>
-        <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-          {availableChapters.filter(ch => !search || ch.toLowerCase().includes(search.toLowerCase())).map((ch, i) => {
-            const chSheets = worksheets.filter(w => w.class===selClass && w.subject===selSubject && w.chapter===ch && (!fDiff || w.difficulty===fDiff));
-            return (
-              <div key={i} style={{ ...S.card, display:"flex", alignItems:"center", justifyContent:"space-between", gap:16, flexWrap:"wrap" }}
-                onMouseEnter={e => e.currentTarget.style.borderColor="var(--color-border-primary)"}
-                onMouseLeave={e => e.currentTarget.style.borderColor="var(--color-border-tertiary)"}>
-                <div style={{ display:"flex", gap:14, alignItems:"center", flex:1 }}>
-                  <div style={{ width:40, height:40, borderRadius:8, background:"var(--color-background-secondary)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:15, fontWeight:600, color:"var(--color-text-secondary)", flexShrink:0 }}>{i+1}</div>
-                  <div>
-                    <div style={{ fontSize:15, fontWeight:500, color:"var(--color-text-primary)", marginBottom:4 }}>{ch}</div>
-                    <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-                      {DIFFICULTIES.map(d => {
-                        const exists = worksheets.find(w => w.class===selClass && w.subject===selSubject && w.chapter===ch && w.difficulty===d);
-                        return exists ? <span key={d} style={{ ...S.badge(DIFF_STYLE[d]) }}>{d}</span> : null;
-                      })}
-                      <span style={{ fontSize:11, color:"var(--color-text-tertiary)" }}>· {chSheets.length} sheets</span>
-                    </div>
-                  </div>
-                </div>
-                <button onClick={() => { setSelChapter(ch); setView("chapter"); }} style={S.btnPrimary}>View Worksheets →</button>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      {toast && <Toast msg={toast} onClose={() => setToast(null)} />}
-    </div>
-  );
 
-  if (view === "chapter") return (
-    <div style={S.page}>
-      <header style={S.header}>
-        <div style={S.logo} onClick={() => nav("home")}>
-          <div style={S.logoIcon}>📚</div>
-          <span style={S.logoText}>CBSE Practice Hub</span>
-        </div>
-        <div style={S.nav}>
-          <button style={S.navBtn} onClick={() => nav("search")}>🔍 Search</button>
-          <button style={{ ...S.navBtn, ...S.navBtnActive }} onClick={() => nav("admin")}>⚙ Admin</button>
-        </div>
-      </header>
-      <div style={S.main}>
-        <Breadcrumb crumbs={[{ label:"Home", action:"home" }, { label:`Class ${selClass}`, action:"class" }, { label:selSubject, action:"subject" }, { label:selChapter }]} onNav={nav} />
-        <h2 style={S.sectionTitle}>{selChapter}</h2>
-        <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:24, flexWrap:"wrap" }}>
-          <span style={S.chip}>📚 Class {selClass}</span>
-          <span style={S.chip}>{SUBJECT_META[selSubject]?.icon} {selSubject}</span>
-          <span style={S.chip}>📄 {chapterWorksheets.length} worksheets</span>
-        </div>
-        <div style={{ background:"#eff6ff", border:"0.5px solid #bfdbfe", borderRadius:10, padding:"14px 18px", marginBottom:28, fontSize:13, color:"#1d4ed8" }}>
-          💡 <strong>Tip:</strong> Start with Easy level to build confidence, then progress to Medium and Hard for exam preparation.
-        </div>
-        <div style={{ display:"flex", flexDirection:"column", gap:20 }}>
+          <div style={{ background:"#eff6ff", border:"0.5px solid #bfdbfe", borderRadius:8, padding:"11px 16px", marginBottom:24, fontSize:12, color:"#1d4ed8" }}>
+            💡 <strong>Tip:</strong> Start with Easy Set A to build confidence, then move to Medium and Hard. Each set has a unique set of questions.
+          </div>
+
           {DIFFICULTIES.map(diff => {
-            const sheets = chapterWorksheets.filter(w => w.difficulty === diff);
+            const sheets = subjWS.filter(w => w.difficulty === diff).sort((a,b) => a.set.localeCompare(b.set));
             if (!sheets.length) return null;
             const ds = DIFF_STYLE[diff];
             return (
-              <div key={diff}>
+              <div key={diff} style={{ marginBottom:28 }}>
                 <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
-                  <span style={{ ...S.badge(ds), fontSize:13 }}>{diff === "Easy" ? "🟢" : diff === "Medium" ? "🟡" : "🔴"} {diff} Level</span>
-                  <div style={{ flex:1, height:"0.5px", background:"var(--color-border-tertiary)" }} />
+                  <span style={{ ...T.badge(ds), fontSize:13, padding:"4px 12px" }}>
+                    {diff==="Easy"?"🟢":diff==="Medium"?"🟡":"🔴"} {diff} Level
+                  </span>
+                  <div style={{ flex:1, height:"0.5px", background:"var(--color-border-tertiary,#e2e8f0)" }} />
+                  <span style={{ fontSize:11, color:"var(--color-text-secondary,#64748b)" }}>{sheets.length} sets</span>
                 </div>
-                <div style={S.grid2}>
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(185px,1fr))", gap:12 }}>
                   {sheets.map(ws => (
-                    <div key={ws.id} style={{ ...S.card, display:"flex", flexDirection:"column", gap:14 }}>
-                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8 }}>
-                        <div style={{ fontSize:15, fontWeight:500, color:"var(--color-text-primary)", lineHeight:1.4 }}>{ws.title}</div>
-                        <span style={{ ...S.badge(ds), flexShrink:0 }}>{diff}</span>
+                    <div key={ws.set}
+                      style={{ ...T.card, display:"flex", flexDirection:"column", gap:10, cursor:"default",
+                        borderTop:`3px solid ${ds.border}`, transition:"box-shadow 0.15s" }}
+                      onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.07)"}
+                      onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                        <div style={{ width:36, height:36, borderRadius:8, background:ds.bg, border:`0.5px solid ${ds.border}`,
+                          display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, fontWeight:700, color:ds.color }}>
+                          {ws.set}
+                        </div>
+                        <span style={T.badge(ds)}>{diff}</span>
                       </div>
-                      <p style={{ fontSize:13, color:"var(--color-text-secondary)", margin:0, lineHeight:1.6 }}>{ws.description}</p>
-                      <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-                        <span style={S.chip}>❓ {ws.questions} questions</span>
-                        <span style={S.chip}>📄 {ws.pages} pages</span>
-                        <span style={S.chip}>✅ Answer key</span>
+                      <div style={{ fontSize:14, fontWeight:600, color:"var(--color-text-primary,#0f172a)", lineHeight:1.3 }}>{ws.title}</div>
+                      <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
+                        <span style={T.chip}>❓ {ws.question_count}Q</span>
+                        <span style={T.chip}>📄 {ws.pages}p</span>
+                        {ws.has_answer_key && <span style={T.chip}>✅ Answers</span>}
                       </div>
-                      <div style={{ display:"flex", gap:8, marginTop:4 }}>
-                        <button onClick={() => handleDownload(ws)} style={{ ...S.btnPrimary, flex:1, textAlign:"center" }}>📥 Download PDF</button>
-                        <button onClick={() => showToast("Opening preview...")} style={{ ...S.btnSecondary, padding:"10px 14px" }}>👁 Preview</button>
+                      <div style={{ display:"flex", gap:7 }}>
+                        <button onClick={() => openPDF(ws, toast2)} style={{ ...T.bp, flex:1, textAlign:"center", padding:"9px 8px", fontSize:12 }}>
+                          📥 Download PDF
+                        </button>
+                        <button onClick={() => ws.pdf_url ? window.open(ws.pdf_url,"_blank") : toast2("Not available")}
+                          style={{ ...T.bs, padding:"9px 12px", fontSize:12 }}>
+                          👁
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -520,229 +347,194 @@ export default function CBSEPracticeHub() {
               </div>
             );
           })}
-        </div>
-        <div style={{ marginTop:36, borderTop:"0.5px solid var(--color-border-tertiary)", paddingTop:24 }}>
-          <h3 style={{ fontSize:15, fontWeight:500, color:"var(--color-text-primary)", marginBottom:14 }}>Other chapters in {selSubject} — Class {selClass}</h3>
-          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-            {(CHAPTERS[selSubject]?.[selClass] || []).filter(ch => ch !== selChapter).map(ch => (
-              <button key={ch} onClick={() => setSelChapter(ch)} style={{ padding:"7px 14px", borderRadius:6, border:"0.5px solid var(--color-border-secondary)", background:"var(--color-background-primary)", fontSize:13, cursor:"pointer", fontFamily:"var(--font-sans)", color:"var(--color-text-primary)" }}>{ch}</button>
-            ))}
-          </div>
-        </div>
-      </div>
-      {toast && <Toast msg={toast} onClose={() => setToast(null)} />}
-    </div>
-  );
 
-  if (view === "search") return (
-    <div style={S.page}>
-      <header style={S.header}>
-        <div style={S.logo} onClick={() => nav("home")}>
-          <div style={S.logoIcon}>📚</div>
-          <span style={S.logoText}>CBSE Practice Hub</span>
-        </div>
-        <div style={S.nav}>
-          <button style={S.navBtn} onClick={() => nav("home")}>← Home</button>
-          <button style={{ ...S.navBtn, ...S.navBtnActive }} onClick={() => nav("admin")}>⚙ Admin</button>
-        </div>
-      </header>
-      <div style={S.main}>
-        <h2 style={S.sectionTitle}>Search Worksheets</h2>
-        <p style={S.sectionSub}>Find worksheets by topic, subject, class, or difficulty</p>
-        <div style={{ background:"var(--color-background-primary)", border:"0.5px solid var(--color-border-tertiary)", borderRadius:12, padding:"20px", marginBottom:24 }}>
-          <div style={{ position:"relative", marginBottom:14 }}>
-            <span style={{ position:"absolute", left:14, top:"50%", transform:"translateY(-50%)", fontSize:16, color:"var(--color-text-tertiary)" }}>🔍</span>
-            <input style={{ ...S.input, paddingLeft:42, fontSize:15, padding:"11px 14px 11px 42px" }} placeholder="Search chapters, topics, or subjects..." value={search} onChange={e => setSearch(e.target.value)} autoFocus />
-          </div>
-          <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
-            <select style={S.select} value={fClass} onChange={e => setFClass(e.target.value)}>
-              <option value="">All Classes</option>
-              {[1,2,3,4,5,6,7,8].map(c => <option key={c} value={c}>Class {c}</option>)}
-            </select>
-            <select style={S.select} value={fSubject} onChange={e => setFSubject(e.target.value)}>
-              <option value="">All Subjects</option>
-              {Object.keys(SUBJECT_META).map(s => <option key={s}>{s}</option>)}
-            </select>
-            <select style={S.select} value={fDiff} onChange={e => setFDiff(e.target.value)}>
-              <option value="">All Difficulties</option>
-              {DIFFICULTIES.map(d => <option key={d}>{d}</option>)}
-            </select>
-            <button onClick={() => { setSearch(""); setFClass(""); setFSubject(""); setFDiff(""); }} style={S.btnSecondary}>Clear</button>
-          </div>
-        </div>
-        <div style={{ marginBottom:16, fontSize:14, color:"var(--color-text-secondary)" }}>
-          Showing <strong>{filteredSearchSheets.length}</strong> of {worksheets.length} worksheets
-        </div>
-        <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-          {filteredSearchSheets.slice(0, 40).map(ws => (
-            <div key={ws.id} style={{ ...S.card, display:"flex", alignItems:"center", gap:16, flexWrap:"wrap" }}
-              onMouseEnter={e => e.currentTarget.style.borderColor="var(--color-border-primary)"}
-              onMouseLeave={e => e.currentTarget.style.borderColor="var(--color-border-tertiary)"}>
-              <div style={{ width:36, height:36, borderRadius:8, background:`${CLASS_COLORS[ws.class-1]}18`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:700, color:CLASS_COLORS[ws.class-1], flexShrink:0 }}>{ws.class}</div>
-              <div style={{ flex:1, minWidth:200 }}>
-                <div style={{ fontSize:14, fontWeight:500, color:"var(--color-text-primary)", marginBottom:4 }}>{ws.title}</div>
-                <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"center" }}>
-                  <span style={{ fontSize:12, color:"var(--color-text-secondary)" }}>{ws.subject}</span>
-                  <span style={{ color:"var(--color-text-tertiary)" }}>·</span>
-                  <span style={{ fontSize:12, color:"var(--color-text-secondary)" }}>{ws.chapter}</span>
-                  <span style={{ color:"var(--color-text-tertiary)" }}>·</span>
-                  <span style={{ ...S.badge(DIFF_STYLE[ws.difficulty]), fontSize:11 }}>{ws.difficulty}</span>
-                  <span style={{ fontSize:11, color:"var(--color-text-tertiary)" }}>{ws.questions}Q</span>
-                </div>
-              </div>
-              <div style={{ display:"flex", gap:8, flexShrink:0 }}>
-                <button onClick={() => { setSelClass(ws.class); setSelSubject(ws.subject); setSelChapter(ws.chapter); setView("chapter"); }} style={S.btnSecondary}>View</button>
-                <button onClick={() => handleDownload(ws)} style={S.btnPrimary}>📥 Download</button>
-              </div>
-            </div>
-          ))}
-          {filteredSearchSheets.length > 40 && <div style={{ textAlign:"center", padding:"20px", color:"var(--color-text-secondary)", fontSize:13 }}>Showing first 40 results. Refine your search to narrow down.</div>}
-          {filteredSearchSheets.length === 0 && (
-            <div style={{ textAlign:"center", padding:"48px 24px", color:"var(--color-text-secondary)" }}>
-              <div style={{ fontSize:32, marginBottom:12 }}>🔍</div>
-              <div style={{ fontSize:15, marginBottom:8 }}>No worksheets found</div>
-              <div style={{ fontSize:13 }}>Try different keywords or clear some filters</div>
-            </div>
-          )}
-        </div>
-      </div>
-      {toast && <Toast msg={toast} onClose={() => setToast(null)} />}
-    </div>
-  );
-
-  if (view === "admin") {
-    const formSubjects = form.class ? SUBJECTS_BY_CLASS(parseInt(form.class)) : [];
-    const formChapters = form.class && form.subject ? (CHAPTERS[form.subject]?.[parseInt(form.class)] || []) : [];
-    return (
-      <div style={S.page}>
-        <header style={S.header}>
-          <div style={S.logo} onClick={() => nav("home")}>
-            <div style={S.logoIcon}>📚</div>
-            <span style={S.logoText}>CBSE Practice Hub</span>
-          </div>
-          <div style={S.nav}>
-            <button style={S.navBtn} onClick={() => nav("home")}>← Back to Site</button>
-          </div>
-        </header>
-        <div style={{ ...S.main, maxWidth:1100 }}>
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:24, flexWrap:"wrap", gap:12 }}>
-            <div>
-              <h2 style={{ ...S.sectionTitle, marginBottom:4 }}>⚙ Admin Panel</h2>
-              <p style={{ margin:0, fontSize:14, color:"var(--color-text-secondary)" }}>Manage all worksheets · {worksheets.length} total</p>
-            </div>
-            <div style={{ display:"flex", gap:8 }}>
-              <button onClick={() => { setAdminTab("list"); setEditId(null); }} style={{ ...S.navBtn, ...(adminTab==="list" ? S.navBtnActive : {}) }}>📋 All Worksheets</button>
-              <button onClick={() => { setAdminTab("upload"); setEditId(null); setForm({ class:"", subject:"", chapter:"", difficulty:"Easy", title:"", description:"", questions:10 }); setFormErrors({}); }} style={{ ...S.navBtn, ...(adminTab==="upload" ? { background:"#15803d", color:"#fff", border:"0.5px solid #15803d" } : {}) }}>+ Upload New</button>
+          {/* Other subjects */}
+          <div style={{ marginTop:28, borderTop:"0.5px solid var(--color-border-tertiary,#e2e8f0)", paddingTop:20 }}>
+            <div style={{ fontSize:13, fontWeight:600, color:"var(--color-text-primary,#0f172a)", marginBottom:10 }}>Other subjects in Class {cls}</div>
+            <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+              {SUBJECTS_BY_CLASS(cls).filter(s => s !== subj).map(s => (
+                <button key={s} onClick={() => setSubj(s)}
+                  style={{ padding:"7px 14px", borderRadius:6, border:"0.5px solid var(--color-border-secondary,#e2e8f0)", background:"var(--color-background-primary,#fff)", fontSize:13, cursor:"pointer", color:"var(--color-text-primary,#0f172a)" }}>
+                  {SUBJECT_META[s]?.icon} {s}
+                </button>
+              ))}
             </div>
           </div>
-
-          {adminTab === "upload" && (
-            <div style={{ background:"var(--color-background-primary)", border:"0.5px solid var(--color-border-tertiary)", borderRadius:12, padding:"28px" }}>
-              <h3 style={{ fontSize:16, fontWeight:500, color:"var(--color-text-primary)", marginBottom:20 }}>{editId ? "✏️ Edit Worksheet" : "📤 Upload New Worksheet"}</h3>
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))", gap:16, marginBottom:16 }}>
-                <div style={S.formRow}>
-                  <label style={S.label}>Class *</label>
-                  <select style={{ ...S.select, width:"100%" }} value={form.class} onChange={e => setForm(f => ({ ...f, class:e.target.value, subject:"", chapter:"" }))}>
-                    <option value="">Select class</option>
-                    {[1,2,3,4,5,6,7,8].map(c => <option key={c} value={c}>Class {c}</option>)}
-                  </select>
-                  {formErrors.class && <div style={S.errorText}>{formErrors.class}</div>}
-                </div>
-                <div style={S.formRow}>
-                  <label style={S.label}>Subject *</label>
-                  <select style={{ ...S.select, width:"100%" }} value={form.subject} onChange={e => setForm(f => ({ ...f, subject:e.target.value, chapter:"" }))} disabled={!form.class}>
-                    <option value="">Select subject</option>
-                    {formSubjects.map(s => <option key={s}>{s}</option>)}
-                  </select>
-                  {formErrors.subject && <div style={S.errorText}>{formErrors.subject}</div>}
-                </div>
-                <div style={S.formRow}>
-                  <label style={S.label}>Chapter *</label>
-                  <select style={{ ...S.select, width:"100%" }} value={form.chapter} onChange={e => setForm(f => ({ ...f, chapter:e.target.value }))} disabled={!form.subject}>
-                    <option value="">Select or type chapter</option>
-                    {formChapters.map(c => <option key={c}>{c}</option>)}
-                    <option value="__custom__">+ Custom chapter</option>
-                  </select>
-                  {form.chapter === "__custom__" && (
-                    <input style={{ ...S.input, marginTop:8 }} placeholder="Enter chapter name" onChange={e => setForm(f => ({ ...f, chapter:e.target.value === "__custom__" ? "" : e.target.value }))} />
-                  )}
-                  {formErrors.chapter && <div style={S.errorText}>{formErrors.chapter}</div>}
-                </div>
-                <div style={S.formRow}>
-                  <label style={S.label}>Difficulty</label>
-                  <select style={{ ...S.select, width:"100%" }} value={form.difficulty} onChange={e => setForm(f => ({ ...f, difficulty:e.target.value }))}>
-                    {DIFFICULTIES.map(d => <option key={d}>{d}</option>)}
-                  </select>
-                </div>
-                <div style={S.formRow}>
-                  <label style={S.label}>Number of Questions</label>
-                  <input type="number" min={5} max={30} style={S.input} value={form.questions} onChange={e => setForm(f => ({ ...f, questions:e.target.value }))} />
-                </div>
-              </div>
-              <div style={{ marginBottom:16 }}>
-                <label style={S.label}>Worksheet Title *</label>
-                <input style={S.input} placeholder="e.g. Fractions – Easy Practice" value={form.title} onChange={e => setForm(f => ({ ...f, title:e.target.value }))} />
-                {formErrors.title && <div style={S.errorText}>{formErrors.title}</div>}
-              </div>
-              <div style={{ marginBottom:20 }}>
-                <label style={S.label}>Description</label>
-                <textarea style={{ ...S.input, minHeight:80, resize:"vertical" }} placeholder="Brief description of the worksheet content..." value={form.description} onChange={e => setForm(f => ({ ...f, description:e.target.value }))} />
-              </div>
-              <div style={{ border:"1.5px dashed var(--color-border-secondary)", borderRadius:8, padding:"24px", textAlign:"center", marginBottom:20, background:"var(--color-background-secondary)" }}>
-                <div style={{ fontSize:28, marginBottom:8 }}>📎</div>
-                <div style={{ fontSize:14, fontWeight:500, color:"var(--color-text-primary)", marginBottom:4 }}>Attach PDF File</div>
-                <div style={{ fontSize:12, color:"var(--color-text-secondary)", marginBottom:12 }}>Drag & drop or click to browse · Max 10MB · PDF only</div>
-                <button style={S.btnSecondary}>Browse File</button>
-              </div>
-              <div style={{ display:"flex", gap:10 }}>
-                <button onClick={handleAdminSubmit} style={S.btnPrimary}>{editId ? "✅ Save Changes" : "📤 Upload Worksheet"}</button>
-                <button onClick={() => { setAdminTab("list"); setEditId(null); setFormErrors({}); }} style={S.btnSecondary}>Cancel</button>
-              </div>
-            </div>
-          )}
-
-          {adminTab === "list" && (
-            <div>
-              <div style={{ display:"flex", gap:10, marginBottom:16, flexWrap:"wrap" }}>
-                <div style={{ position:"relative", flex:1, minWidth:200 }}>
-                  <span style={{ position:"absolute", left:12, top:"50%", transform:"translateY(-50%)", fontSize:14, color:"var(--color-text-tertiary)" }}>🔍</span>
-                  <input style={{ ...S.input, paddingLeft:36 }} placeholder="Search worksheets..." value={adminSearch} onChange={e => setAdminSearch(e.target.value)} />
-                </div>
-              </div>
-              <div style={{ background:"var(--color-background-primary)", border:"0.5px solid var(--color-border-tertiary)", borderRadius:12, overflow:"hidden" }}>
-                <div style={{ display:"grid", gridTemplateColumns:"50px 1fr 100px 80px 80px 70px 130px", gap:0, padding:"10px 16px", background:"var(--color-background-secondary)", borderBottom:"0.5px solid var(--color-border-tertiary)", fontSize:12, fontWeight:500, color:"var(--color-text-secondary)" }}>
-                  <span>Class</span><span>Title / Chapter</span><span>Subject</span><span>Diff.</span><span>Questions</span><span>Pages</span><span>Actions</span>
-                </div>
-                <div style={{ maxHeight:500, overflowY:"auto" }}>
-                  {adminSheets.slice(0, 60).map((ws, i) => (
-                    <div key={ws.id} style={{ display:"grid", gridTemplateColumns:"50px 1fr 100px 80px 80px 70px 130px", gap:0, padding:"12px 16px", borderBottom:"0.5px solid var(--color-border-tertiary)", fontSize:13, alignItems:"center", background: i % 2 === 0 ? "transparent" : "var(--color-background-secondary)" }}>
-                      <div style={{ width:28, height:28, borderRadius:6, background:`${CLASS_COLORS[ws.class-1]}18`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:700, color:CLASS_COLORS[ws.class-1] }}>{ws.class}</div>
-                      <div>
-                        <div style={{ fontSize:13, fontWeight:500, color:"var(--color-text-primary)", marginBottom:2 }}>{ws.title}</div>
-                        <div style={{ fontSize:11, color:"var(--color-text-secondary)" }}>{ws.chapter}</div>
-                      </div>
-                      <div style={{ fontSize:12, color:"var(--color-text-secondary)" }}>{ws.subject}</div>
-                      <div><span style={{ ...S.badge(DIFF_STYLE[ws.difficulty]), fontSize:10 }}>{ws.difficulty}</span></div>
-                      <div style={{ fontSize:12, color:"var(--color-text-secondary)" }}>{ws.questions}Q</div>
-                      <div style={{ fontSize:12, color:"var(--color-text-secondary)" }}>{ws.pages}p</div>
-                      <div style={{ display:"flex", gap:6 }}>
-                        <button onClick={() => handleEdit(ws)} style={S.btnSm("#2563eb")}>✏ Edit</button>
-                        <button onClick={() => { if(confirm(`Delete "${ws.title}"?`)) handleDelete(ws.id); }} style={S.btnSm("#dc2626")}>🗑</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div style={{ padding:"12px 16px", borderTop:"0.5px solid var(--color-border-tertiary)", fontSize:12, color:"var(--color-text-secondary)", background:"var(--color-background-secondary)" }}>
-                  Showing {Math.min(adminSheets.length, 60)} of {adminSheets.length} worksheets
-                </div>
-              </div>
-            </div>
-          )}
         </div>
         {toast && <Toast msg={toast} onClose={() => setToast(null)} />}
       </div>
     );
   }
+
+  // ── SEARCH ────────────────────────────────────────────────────────────────
+  if (view === "search") return (
+    <div style={T.page}>
+      <Hdr nav={nav} active="search" />
+      <div style={T.main}>
+        <h2 style={T.H2}>🔍 Search Worksheets</h2>
+        <p style={T.sub}>Find worksheets by subject, class, difficulty or set letter</p>
+
+        <div style={{ ...T.card, marginBottom:20, cursor:"default" }}>
+          <div style={{ position:"relative", marginBottom:12 }}>
+            <span style={{ position:"absolute", left:12, top:"50%", transform:"translateY(-50%)", fontSize:14, color:"#94a3b8" }}>🔍</span>
+            <input style={{ ...T.inp, paddingLeft:36, fontSize:14 }}
+              placeholder="Type subject, class or set…" value={q} onChange={e => setQ(e.target.value)} autoFocus />
+          </div>
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+            <select style={T.sel} value={fCls}  onChange={e => setFCls(e.target.value)}>
+              <option value="">All Classes</option>
+              {[1,2,3,4,5,6,7,8].map(c => <option key={c} value={c}>Class {c}</option>)}
+            </select>
+            <select style={T.sel} value={fSub}  onChange={e => setFSub(e.target.value)}>
+              <option value="">All Subjects</option>
+              {Object.keys(SUBJECT_META).map(s => <option key={s}>{s}</option>)}
+            </select>
+            <select style={T.sel} value={fDiff} onChange={e => setFDiff(e.target.value)}>
+              <option value="">All Difficulties</option>
+              {DIFFICULTIES.map(d => <option key={d}>{d}</option>)}
+            </select>
+            <button onClick={() => { setQ(""); setFCls(""); setFSub(""); setFDiff(""); }} style={T.bs}>Clear</button>
+          </div>
+        </div>
+
+        <div style={{ fontSize:13, color:"var(--color-text-secondary,#64748b)", marginBottom:14 }}>
+          Showing <strong>{Math.min(searchWS.length,60)}</strong> of {searchWS.length} worksheets
+        </div>
+
+        <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+          {searchWS.slice(0,60).map((ws,i) => {
+            const ds = DIFF_STYLE[ws.difficulty];
+            return (
+              <div key={i} style={{ ...T.card, display:"flex", alignItems:"center", gap:14, flexWrap:"wrap", cursor:"default", transition:"border-color 0.15s" }}
+                onMouseEnter={e => e.currentTarget.style.borderColor = "var(--color-border-primary,#94a3b8)"}
+                onMouseLeave={e => e.currentTarget.style.borderColor = "var(--color-border-tertiary,#e2e8f0)"}>
+                <div style={{ width:34, height:34, borderRadius:7, background:`${CLASS_COLORS[ws.class-1]}18`,
+                  display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:700, color:CLASS_COLORS[ws.class-1], flexShrink:0 }}>
+                  {ws.class}
+                </div>
+                <div style={{ width:28, height:28, borderRadius:6, background:ds.bg, border:`0.5px solid ${ds.border}`,
+                  display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:700, color:ds.color, flexShrink:0 }}>
+                  {ws.set}
+                </div>
+                <div style={{ flex:1, minWidth:160 }}>
+                  <div style={{ fontSize:13, fontWeight:500, color:"var(--color-text-primary,#0f172a)", marginBottom:3 }}>{ws.title}</div>
+                  <div style={{ display:"flex", gap:5, flexWrap:"wrap", alignItems:"center" }}>
+                    <span style={{ fontSize:11, color:"var(--color-text-secondary,#64748b)" }}>{ws.subject}</span>
+                    <span style={{ color:"#cbd5e1" }}>·</span>
+                    <span style={T.badge(ds)}>{ws.difficulty}</span>
+                    <span style={{ fontSize:10, color:"var(--color-text-secondary,#64748b)" }}>{ws.question_count}Q</span>
+                    {ws.has_answer_key && <span style={{ fontSize:10, color:"#15803d" }}>✅ Answers</span>}
+                  </div>
+                </div>
+                <div style={{ display:"flex", gap:7, flexShrink:0 }}>
+                  <button onClick={() => { setCls(ws.class); setSubj(ws.subject); nav("subject"); }}
+                    style={{ ...T.bs, padding:"7px 12px", fontSize:12 }}>View All</button>
+                  <button onClick={() => openPDF(ws, toast2)} style={{ ...T.bp, padding:"7px 14px", fontSize:12 }}>📥 Download</button>
+                </div>
+              </div>
+            );
+          })}
+          {searchWS.length === 0 && (
+            <div style={{ textAlign:"center", padding:"40px 20px" }}>
+              <div style={{ fontSize:28, marginBottom:10 }}>🔍</div>
+              <div style={{ fontSize:14, color:"var(--color-text-secondary,#64748b)" }}>No worksheets found. Try different filters.</div>
+            </div>
+          )}
+        </div>
+      </div>
+      {toast && <Toast msg={toast} onClose={() => setToast(null)} />}
+    </div>
+  );
+
+  // ── EBOOKS ────────────────────────────────────────────────────────────────
+  if (view === "ebooks") return (
+    <div style={T.page}>
+      <Hdr nav={nav} active="ebooks" />
+      <div style={T.main}>
+        <h2 style={T.H2}>📗 NCERT Ebooks & Textbooks</h2>
+        <p style={T.sub}>Access official NCERT digital textbooks for all classes and subjects — free, directly from the NCERT portal</p>
+
+        {/* Big CTA */}
+        <div style={{ background:"linear-gradient(135deg,#1e3a8a,#2563eb)", borderRadius:14, padding:"32px 28px", marginBottom:28, position:"relative", overflow:"hidden" }}>
+          <div style={{ position:"absolute", top:-10, right:-10, fontSize:100, opacity:0.06 }}>📗</div>
+          <div style={{ display:"inline-flex", alignItems:"center", gap:6, background:"rgba(255,255,255,0.15)",
+            border:"0.5px solid rgba(255,255,255,0.3)", borderRadius:20, padding:"4px 12px",
+            fontSize:11, color:"rgba(255,255,255,0.9)", marginBottom:14 }}>
+            🏛️ Official Government of India Resource
+          </div>
+          <h3 style={{ fontSize:22, fontWeight:700, color:"#fff", margin:"0 0 10px", letterSpacing:"-0.4px" }}>NCERT Textbook Portal</h3>
+          <p style={{ fontSize:14, color:"rgba(255,255,255,0.75)", margin:"0 0 20px", maxWidth:480, lineHeight:1.6 }}>
+            Download all NCERT textbooks in PDF format for Classes 1–12, available in English, Hindi and Urdu.
+            Completely free and from the official source — updated every academic year.
+          </p>
+          <button onClick={() => window.open("https://ncert.nic.in/textbook.php","_blank","noopener,noreferrer")}
+            style={{ background:"#fbbf24", color:"#1e3a8a", border:"none", padding:"12px 24px", borderRadius:8, fontSize:14, fontWeight:700, cursor:"pointer" }}>
+            📗 Open NCERT Textbooks ↗
+          </button>
+          <div style={{ marginTop:16, display:"flex", gap:16, flexWrap:"wrap" }}>
+            {[["📚","Classes 1–12"],["🌐","English, Hindi & Urdu"],["📥","Free PDF Downloads"],["✅","Official NCERT Content"]].map(([ic,lb]) => (
+              <div key={lb} style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, color:"rgba(255,255,255,0.8)" }}>
+                <span>{ic}</span><span>{lb}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Stages */}
+        <h3 style={{ fontSize:16, fontWeight:600, color:"var(--color-text-primary,#0f172a)", marginBottom:14 }}>What's on the NCERT Portal</h3>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))", gap:14, marginBottom:32 }}>
+          {NCERT_STAGES.map(s => (
+            <div key={s.cls} style={{ ...T.card, cursor:"default" }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 }}>
+                <div>
+                  <div style={{ fontSize:11, color:"#2563eb", fontWeight:700, letterSpacing:"0.3px", marginBottom:3 }}>CLASS {s.cls}</div>
+                  <div style={{ fontSize:15, fontWeight:600, color:"var(--color-text-primary,#0f172a)" }}>{s.label}</div>
+                </div>
+                <span style={{ fontSize:10, background:"#eff6ff", color:"#1d4ed8", padding:"2px 7px", borderRadius:10, border:"0.5px solid #bfdbfe" }}>{s.subjects.length} subjects</span>
+              </div>
+              <p style={{ fontSize:12, color:"var(--color-text-secondary,#64748b)", margin:"0 0 12px", lineHeight:1.5 }}>{s.desc}</p>
+              <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
+                {s.subjects.map(sub => (
+                  <span key={sub} style={{ fontSize:10, padding:"2px 7px", borderRadius:10, background:"var(--color-background-secondary,#f1f5f9)", color:"var(--color-text-secondary,#64748b)", border:"0.5px solid var(--color-border-tertiary,#e2e8f0)" }}>{sub}</span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* How to use */}
+        <div style={{ ...T.card, cursor:"default", marginBottom:24 }}>
+          <h3 style={{ fontSize:15, fontWeight:600, color:"var(--color-text-primary,#0f172a)", marginBottom:14 }}>📋 How to Download NCERT Books</h3>
+          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+            {[["1","Open the NCERT portal","Click 'Open NCERT Textbooks' above to go to ncert.nic.in/textbook.php"],
+              ["2","Select your class","Use the Class dropdown on the NCERT portal to filter by grade"],
+              ["3","Choose a subject","Pick from the Subject dropdown (English, Maths, Science, etc.)"],
+              ["4","Download the PDF","Click on the chapter link or full-book PDF to download"]].map(([n,t,d]) => (
+              <div key={n} style={{ display:"flex", gap:12, alignItems:"flex-start" }}>
+                <div style={{ width:24, height:24, borderRadius:6, background:"#1e40af", display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:700, color:"#fff", flexShrink:0 }}>{n}</div>
+                <div>
+                  <div style={{ fontSize:13, fontWeight:600, color:"var(--color-text-primary,#0f172a)", marginBottom:2 }}>{t}</div>
+                  <div style={{ fontSize:12, color:"var(--color-text-secondary,#64748b)", lineHeight:1.5 }}>{d}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop:16, paddingTop:14, borderTop:"0.5px solid var(--color-border-tertiary,#e2e8f0)" }}>
+            <button onClick={() => window.open("https://ncert.nic.in/textbook.php","_blank","noopener,noreferrer")}
+              style={{ ...T.bp, display:"inline-flex", alignItems:"center", gap:8 }}>
+              📗 Go to NCERT Textbook Portal ↗
+            </button>
+          </div>
+        </div>
+
+        <div style={{ background:"#fef9c3", border:"0.5px solid #fde047", borderRadius:8, padding:"12px 16px", fontSize:12, color:"#713f12", lineHeight:1.6 }}>
+          <strong>Note:</strong> NCERT textbooks are also available on the DIKSHA app — the Government of India's official digital learning platform.
+          CBSE Practice Hub worksheets are complementary practice material based on the NCERT curriculum.
+        </div>
+      </div>
+      {toast && <Toast msg={toast} onClose={() => setToast(null)} />}
+    </div>
+  );
 
   return null;
 }
