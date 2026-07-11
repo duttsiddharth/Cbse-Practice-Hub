@@ -1,15 +1,18 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import WORKSHEETS from "../data.json";
+import { startPurchase, fetchEntitlements } from "./lib/payments";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTS & CONFIG
 // ─────────────────────────────────────────────────────────────────────────────
 const FREE_DOWNLOADS_PER_CLASS = 3;
-const RAZORPAY_KEY = "rzp_test_SbHfJChwJysf1R"; // ← replace with your Razorpay key
 
+// One-time purchases (prices in ₹). The SERVER (api/_lib/razorpay.js CATALOG)
+// is the source of truth for the amount actually charged — keep them in sync.
 const PLANS = {
-  class: { monthly: 49,  annual: 299,  label: "Single Class", desc: "Unlimited worksheets for 1 class" },
-  all:   { monthly: 149, annual: 799,  label: "All Classes",  desc: "Unlimited for all 8 classes" },
+  class:    { price: 199, scope: "class",    kind: "year",     label: "Single Class",         desc: "1-year access to one class" },
+  all:      { price: 499, scope: "all",      kind: "year",     label: "All Classes",          desc: "1-year access to all 8 classes" },
+  lifetime: { price: 999, scope: "all",      kind: "lifetime", label: "All Classes · Lifetime", desc: "Lifetime access + all future content" },
 };
 
 const SUBJECT_META = {
@@ -42,13 +45,14 @@ const NCERT_STAGES = [
 // HOOKS
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Track free downloads per class + subscriptions in localStorage
+// Track free downloads per class + purchased scopes.
+// localStorage is a fast cache; /api/entitlements is the source of truth.
 function useAccess() {
   const [state, setState] = useState(() => {
     try {
       const raw = localStorage.getItem("cbse_access");
-      return raw ? JSON.parse(raw) : { downloads: {}, subscribed: [] };
-    } catch { return { downloads: {}, subscribed: [] }; }
+      return raw ? JSON.parse(raw) : { downloads: {}, unlocked: [], email: null };
+    } catch { return { downloads: {}, unlocked: [], email: null }; }
   });
 
   const persist = (next) => {
@@ -58,13 +62,13 @@ function useAccess() {
 
   const downloadsUsed = (cls) => state.downloads[cls] || 0;
 
+  const isUnlocked = (cls) =>
+    state.unlocked.includes("all") || state.unlocked.includes(String(cls));
+
   const freeLeft = (cls) => {
     if (isUnlocked(cls)) return Infinity;
     return Math.max(0, FREE_DOWNLOADS_PER_CLASS - downloadsUsed(cls));
   };
-
-  const isUnlocked = (cls) =>
-    state.subscribed.includes("all") || state.subscribed.includes(String(cls));
 
   const recordDownload = (cls) => {
     if (isUnlocked(cls)) return true; // unlimited
@@ -74,14 +78,33 @@ function useAccess() {
     return true;
   };
 
-  const subscribe = (cls) => { // cls = number | "all"
-    const key = cls === "all" ? "all" : String(cls);
-    if (!state.subscribed.includes(key)) {
-      persist({ ...state, subscribed: [...state.subscribed, key] });
-    }
+  // Grant a purchased scope ("all" | "1".."8") after server verification.
+  const grant = (scope, email) => {
+    const key = String(scope);
+    const nextUnlocked = state.unlocked.includes(key) ? state.unlocked : [...state.unlocked, key];
+    persist({ ...state, unlocked: nextUnlocked, email: email || state.email });
   };
 
-  return { freeLeft, isUnlocked, recordDownload, subscribe, downloadsUsed };
+  // Pull authoritative entitlements from the server for an email.
+  const restore = useCallback(async (email) => {
+    if (!email) return [];
+    const scopes = await fetchEntitlements(email);
+    setState((prev) => {
+      const merged = Array.from(new Set([...prev.unlocked, ...scopes]));
+      const next = { ...prev, unlocked: merged, email };
+      try { localStorage.setItem("cbse_access", JSON.stringify(next)); } catch {}
+      return next;
+    });
+    return scopes;
+  }, []);
+
+  // On load, refresh entitlements if we know the buyer's email.
+  useEffect(() => {
+    if (state.email) restore(state.email);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return { freeLeft, isUnlocked, recordDownload, grant, restore, downloadsUsed, email: state.email };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -174,7 +197,7 @@ const FreeBadge = ({ left, unlocked }) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // PAYWALL MODAL
 // ─────────────────────────────────────────────────────────────────────────────
-const PaywallModal = ({ cls, onSubscribe, onClose }) => (
+const PaywallModal = ({ cls, onBuy, onClose }) => (
   <div style={T.over} onClick={onClose}>
     <div onClick={e => e.stopPropagation()} style={{ background:"#fff", borderRadius:20, padding:"36px 32px",
       maxWidth:480, width:"100%", boxShadow:"0 24px 80px rgba(0,0,0,0.18)", textAlign:"center" }}>
@@ -184,16 +207,16 @@ const PaywallModal = ({ cls, onSubscribe, onClose }) => (
       </h2>
       <p style={{ fontSize:14, color:"#64748b", margin:"0 0 24px", lineHeight:1.6 }}>
         You've used all <strong>3 free worksheets</strong> for <strong>Class {cls}</strong>.
-        Unlock unlimited downloads for just ₹49/month.
+        Unlock unlimited downloads with a one-time payment — no subscription.
       </p>
 
       <div style={{ background:"linear-gradient(135deg,#eff6ff,#dbeafe)", border:"1px solid #bfdbfe",
         borderRadius:14, padding:"20px", marginBottom:20, textAlign:"left" }}>
-        <div style={{ fontSize:13, fontWeight:700, color:"#1d4ed8", marginBottom:12 }}>✨ What you get with Premium:</div>
+        <div style={{ fontSize:13, fontWeight:700, color:"#1d4ed8", marginBottom:12 }}>✨ What you unlock:</div>
         {["Unlimited downloads for all 15 worksheets in Class "+cls,
           "Easy, Medium & Hard — all 5 sets per difficulty",
-          "New worksheets added every month",
-          "Ad-free experience"].map(f => (
+          "Answer keys included",
+          "New worksheets added through the session"].map(f => (
           <div key={f} style={{ display:"flex", gap:8, alignItems:"flex-start", marginBottom:8, fontSize:13, color:"#1e3a8a" }}>
             <span style={{ color:"#16a34a", flexShrink:0, marginTop:1 }}>✓</span>{f}
           </div>
@@ -201,249 +224,113 @@ const PaywallModal = ({ cls, onSubscribe, onClose }) => (
       </div>
 
       <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-        <button onClick={() => onSubscribe(cls, "class")} style={{ ...T.bpG, padding:"14px 20px", fontSize:15, borderRadius:10 }}>
-          🔓 Unlock Class {cls} — ₹49/month
+        <button onClick={() => onBuy("class", cls)} style={{ ...T.bpG, padding:"14px 20px", fontSize:15, borderRadius:10 }}>
+          🔓 Unlock Class {cls} — ₹{PLANS.class.price} for the year
         </button>
-        <button onClick={() => onSubscribe("all", "all")} style={{ background:"linear-gradient(135deg,#7c3aed,#6d28d9)", color:"#fff",
+        <button onClick={() => onBuy("all", null)} style={{ background:"linear-gradient(135deg,#7c3aed,#6d28d9)", color:"#fff",
           border:"none", padding:"12px 20px", borderRadius:10, fontSize:14, cursor:"pointer", fontWeight:600 }}>
-          🚀 Unlock All Classes — ₹149/month
+          🚀 Unlock All Classes — ₹{PLANS.all.price} for the year
         </button>
         <button onClick={onClose} style={{ ...T.bs, fontSize:13 }}>Maybe later</button>
       </div>
       <p style={{ fontSize:11, color:"#94a3b8", marginTop:14 }}>
-        Secure payment · Cancel anytime · UPI / Cards / Wallets accepted
+        One-time payment · no auto-renewal · UPI / Cards / Net Banking / Wallets
       </p>
     </div>
   </div>
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PAYMENT GATEWAY MODAL
+// PAYMENT MODAL (one-time, PCI-safe — Razorpay Checkout collects card data)
 // ─────────────────────────────────────────────────────────────────────────────
-const WALLETS = [
-  { id:"gpay",    name:"Google Pay",   icon:"🟢", color:"#1a73e8" },
-  { id:"phonepe", name:"PhonePe",      icon:"🟣", color:"#5f259f" },
-  { id:"paytm",   name:"Paytm",        icon:"🔵", color:"#00baf2" },
-  { id:"amazon",  name:"Amazon Pay",   icon:"🟡", color:"#ff9900" },
-  { id:"cred",    name:"CRED",         icon:"⚫", color:"#1c1c1c" },
-];
+const PaymentModal = ({ planKey, cls, onSuccess, onClose }) => {
+  const plan   = PLANS[planKey];
+  const amount = plan.price;
+  const title  = planKey === "class" ? `Class ${cls}` : plan.label;
+  const termLine =
+    plan.kind === "lifetime" ? "Lifetime access · one-time" : "1-year access · one-time";
 
-const PaymentModal = ({ plan, cls, billing, onSuccess, onClose }) => {
-  const amount = billing === "annual" ? PLANS[plan].annual : PLANS[plan].monthly;
-  const label  = plan === "all" ? "All Classes" : `Class ${cls}`;
-  const [tab,    setTab]    = useState("upi"); // upi | card | wallet | netbanking
-  const [upiId,  setUpiId]  = useState("");
-  const [paying, setPaying] = useState(false);
-  const [selWal, setSelWal] = useState(null);
-  const [cardNo, setCardNo] = useState("");
-  const [expiry, setExpiry] = useState("");
-  const [cvv,    setCvv]    = useState("");
-  const [name,   setName]   = useState("");
+  const [name,    setName]    = useState("");
+  const [email,   setEmail]   = useState("");
+  const [contact, setContact] = useState("");
+  const [busy,    setBusy]    = useState(false);
+  const [error,   setError]   = useState("");
 
-  // Razorpay checkout integration
-  const launchRazorpay = useCallback(() => {
-    if (typeof window.Razorpay === "undefined") {
-      // Load Razorpay script dynamically
-      const s = document.createElement("script");
-      s.src = "https://checkout.razorpay.com/v1/checkout.js";
-      s.onload = doRazorpay;
-      document.head.appendChild(s);
-    } else { doRazorpay(); }
-  }, [amount, label]);
+  const emailOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
+  const phoneOk = /^\+?\d{10,13}$/.test(contact.replace(/[\s-]/g, ""));
+  const canPay  = name.trim() && emailOk && phoneOk && !busy;
 
-  const doRazorpay = () => {
-    const options = {
-      key: RAZORPAY_KEY,
-      amount: amount * 100, // paise
-      currency: "INR",
-      name: "CBSE Practice Hub",
-      description: `${label} — ${billing === "annual" ? "Annual" : "Monthly"} Plan`,
-      image: "https://cbse-practice-hub.vercel.app/favicon.ico",
-      handler: () => { onSuccess(); },
-      prefill: { name: "", email: "", contact: "" },
-      theme: { color: "#1e40af" },
-      method: {
-        upi: true, card: true, netbanking: true, wallet: true,
-        emi: false, paylater: false,
+  const pay = () => {
+    setError("");
+    setBusy(true);
+    startPurchase(
+      {
+        planKey,
+        cls: planKey === "class" ? cls : null,
+        label: `${title} — ${plan.kind === "lifetime" ? "Lifetime" : "1 Year"}`,
+        customer: { name: name.trim(), email: email.trim().toLowerCase(), contact: contact.trim() },
       },
-    };
-    new window.Razorpay(options).open();
+      {
+        onSuccess: (scope, em) => { setBusy(false); onSuccess(scope, em); },
+        onError:   (msg)       => { setBusy(false); setError(msg); },
+        onDismiss: ()          => setBusy(false),
+      }
+    );
   };
-
-  const simulatePay = () => {
-    setPaying(true);
-    setTimeout(() => { setPaying(false); onSuccess(); }, 2000);
-  };
-
-  const tabStyle = (id) => ({
-    flex:1, padding:"10px 4px", border:"none", background:"none", cursor:"pointer",
-    fontSize:12, fontWeight:600, fontFamily:"inherit", borderBottom:"2px solid",
-    borderColor: tab===id ? "#1e40af":"transparent",
-    color: tab===id ? "#1e40af":"#64748b",
-  });
 
   return (
     <div style={T.over} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background:"#fff", borderRadius:20, padding:"0",
+      <div onClick={e => e.stopPropagation()} style={{ background:"#fff", borderRadius:20,
         maxWidth:440, width:"100%", boxShadow:"0 24px 80px rgba(0,0,0,0.2)", overflow:"hidden" }}>
 
         {/* Header */}
         <div style={{ background:"linear-gradient(135deg,#1e3a8a,#1e40af)", padding:"20px 24px", position:"relative" }}>
           <button onClick={onClose} style={{ position:"absolute", top:16, right:16, background:"rgba(255,255,255,0.15)",
-            border:"none", color:"#fff", width:28, height:28, borderRadius:"50%", cursor:"pointer", fontSize:14, display:"flex", alignItems:"center", justifyContent:"center" }}>×</button>
+            border:"none", color:"#fff", width:28, height:28, borderRadius:"50%", cursor:"pointer", fontSize:14 }}>×</button>
           <div style={{ fontSize:12, color:"rgba(255,255,255,0.7)", marginBottom:4 }}>CBSE PRACTICE HUB · SECURE CHECKOUT</div>
-          <div style={{ fontSize:22, fontWeight:700, color:"#fff", letterSpacing:"-0.3px" }}>₹{amount}<span style={{ fontSize:14, fontWeight:400 }}>/{billing==="annual"?"year":"month"}</span></div>
-          <div style={{ fontSize:13, color:"rgba(255,255,255,0.8)", marginTop:4 }}>{label} · {billing==="annual"?"Annual (save 50%)":"Monthly"} Plan</div>
-          {billing==="annual" && <div style={{ display:"inline-flex", marginTop:8, background:"#fbbf24", color:"#1e3a8a", fontSize:11, fontWeight:700, padding:"3px 10px", borderRadius:20 }}>🎉 50% OFF vs Monthly</div>}
+          <div style={{ fontSize:22, fontWeight:700, color:"#fff" }}>₹{amount}</div>
+          <div style={{ fontSize:13, color:"rgba(255,255,255,0.8)", marginTop:4 }}>{title} · {termLine}</div>
         </div>
 
-        {/* Payment tabs */}
-        <div style={{ display:"flex", borderBottom:"1px solid #e8edf5", padding:"0 16px" }}>
-          {[["upi","📱 UPI"],["wallet","👛 Wallets"],["card","💳 Card"],["netbanking","🏦 Net Banking"]].map(([id,lb]) => (
-            <button key={id} style={tabStyle(id)} onClick={() => setTab(id)}>{lb}</button>
-          ))}
+        {/* Details */}
+        <div style={{ padding:"22px 24px", display:"flex", flexDirection:"column", gap:14 }}>
+          <div>
+            <label style={{ fontSize:12, fontWeight:600, color:"#475569", marginBottom:5, display:"block" }}>Full name</label>
+            <input style={T.inp} placeholder="Parent / guardian name" value={name} onChange={e=>setName(e.target.value)} />
+          </div>
+          <div>
+            <label style={{ fontSize:12, fontWeight:600, color:"#475569", marginBottom:5, display:"block" }}>
+              Email <span style={{ color:"#64748b", fontWeight:400 }}>(receipt + restore access)</span>
+            </label>
+            <input style={T.inp} type="email" placeholder="you@example.com" value={email} onChange={e=>setEmail(e.target.value)} />
+          </div>
+          <div>
+            <label style={{ fontSize:12, fontWeight:600, color:"#475569", marginBottom:5, display:"block" }}>Mobile number</label>
+            <input style={T.inp} inputMode="tel" placeholder="10-digit mobile" value={contact} onChange={e=>setContact(e.target.value)} />
+          </div>
+
+          {error && (
+            <div style={{ background:"#fef2f2", border:"1px solid #fecaca", color:"#b91c1c",
+              borderRadius:8, padding:"10px 12px", fontSize:12.5 }}>{error}</div>
+          )}
+
+          <button onClick={pay} disabled={!canPay}
+            style={{ background: canPay ? "linear-gradient(135deg,#059669,#047857)" : "#94a3b8",
+              color:"#fff", border:"none", padding:"14px", borderRadius:10, fontSize:15,
+              fontWeight:700, cursor: canPay ? "pointer" : "not-allowed", fontFamily:"inherit" }}>
+            {busy ? "Opening secure checkout…" : `Pay ₹${amount}`}
+          </button>
+
+          <div style={{ fontSize:11, color:"#94a3b8", textAlign:"center", lineHeight:1.6 }}>
+            You'll pay on Razorpay's secure page (UPI · Cards · Net Banking · Wallets).<br/>
+            One-time payment · no auto-renewal · we never see your card details.
+          </div>
         </div>
 
-        <div style={{ padding:"20px 24px" }}>
-
-          {/* UPI TAB */}
-          {tab==="upi" && (
-            <div>
-              {/* UPI QR */}
-              <div style={{ textAlign:"center", marginBottom:20 }}>
-                <div style={{ display:"inline-block", background:"#f8fafc", border:"1px solid #e2e8f0", borderRadius:12, padding:"16px" }}>
-                  {/* Simulated QR */}
-                  <svg width="140" height="140" viewBox="0 0 140 140" style={{ display:"block" }}>
-                    <rect width="140" height="140" fill="#fff"/>
-                    {/* QR pattern simulation */}
-                    {[0,1,2,3,4,5,6].map(r=>
-                      [0,1,2,3,4,5,6].map(c=> {
-                        const edge = r<7&&r>=0&&(c===0||c===6||r===0||r===6);
-                        const inner = r>=2&&r<=4&&c>=2&&c<=4;
-                        if(edge||inner) return <rect key={`${r}-${c}`} x={8+c*18} y={8+r*18} width="15" height="15" fill="#0f172a" rx="2"/>;
-                        return null;
-                      })
-                    )}
-                    {[7,8,9].map(r=>
-                      [0,1,2,3,4,5,6,7,8,9].map(c=> {
-                        if (Math.random()>0.5) return null;
-                        return <rect key={`${r}-${c}`} x={8+c*12} y={8+r*12} width="9" height="9" fill="#0f172a" rx="1"/>;
-                      })
-                    )}
-                    <text x="70" y="130" textAnchor="middle" fill="#1e40af" fontSize="9" fontWeight="bold">Scan to Pay ₹{amount}</text>
-                  </svg>
-                </div>
-                <div style={{ fontSize:12, color:"#64748b", marginTop:10 }}>Scan with any UPI app · PhonePe · GPay · Paytm</div>
-              </div>
-
-              <div style={{ display:"flex", alignItems:"center", gap:10, margin:"0 0 16px" }}>
-                <div style={{ flex:1, height:"1px", background:"#e2e8f0" }}/>
-                <span style={{ fontSize:12, color:"#94a3b8" }}>or enter UPI ID</span>
-                <div style={{ flex:1, height:"1px", background:"#e2e8f0" }}/>
-              </div>
-
-              <div style={{ display:"flex", gap:8 }}>
-                <input style={T.inp} placeholder="yourname@upi · phonepe · gpay" value={upiId} onChange={e=>setUpiId(e.target.value)}/>
-                <button onClick={simulatePay} disabled={!upiId||paying}
-                  style={{ ...T.bpG, padding:"10px 16px", opacity:(!upiId||paying)?0.6:1, whiteSpace:"nowrap" }}>
-                  {paying ? "Verifying…":"Pay ₹"+amount}
-                </button>
-              </div>
-              <div style={{ fontSize:11, color:"#94a3b8", marginTop:8, textAlign:"center" }}>
-                Supports: @okaxis · @okicici · @oksbi · @ybl · @paytm · @apl
-              </div>
-            </div>
-          )}
-
-          {/* WALLET TAB */}
-          {tab==="wallet" && (
-            <div>
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
-                {WALLETS.map(w => (
-                  <button key={w.id} onClick={() => setSelWal(w.id)}
-                    style={{ background: selWal===w.id ? "#eff6ff":"#f8fafc",
-                      border:`1.5px solid ${selWal===w.id?"#1e40af":"#e2e8f0"}`,
-                      borderRadius:10, padding:"14px 12px", cursor:"pointer",
-                      display:"flex", alignItems:"center", gap:10, fontFamily:"inherit" }}>
-                    <span style={{ fontSize:20 }}>{w.icon}</span>
-                    <span style={{ fontSize:13, fontWeight:600, color: selWal===w.id?"#1e40af":"#334155" }}>{w.name}</span>
-                  </button>
-                ))}
-              </div>
-              <button onClick={simulatePay} disabled={!selWal||paying}
-                style={{ ...T.bpG, width:"100%", padding:"13px", opacity:(!selWal||paying)?0.6:1 }}>
-                {paying?"Processing…":selWal?`Pay ₹${amount} via ${WALLETS.find(w=>w.id===selWal)?.name}`:"Select a wallet"}
-              </button>
-            </div>
-          )}
-
-          {/* CARD TAB */}
-          {tab==="card" && (
-            <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-              <div>
-                <label style={{ fontSize:12, fontWeight:600, color:"#475569", marginBottom:5, display:"block" }}>Card Number</label>
-                <div style={{ position:"relative" }}>
-                  <input style={T.inp} placeholder="1234  5678  9012  3456" maxLength={19}
-                    value={cardNo} onChange={e=>setCardNo(e.target.value.replace(/\D/g,"").replace(/(.{4})/g,"$1 ").trim())}/>
-                  <span style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", fontSize:18 }}>💳</span>
-                </div>
-              </div>
-              <div>
-                <label style={{ fontSize:12, fontWeight:600, color:"#475569", marginBottom:5, display:"block" }}>Cardholder Name</label>
-                <input style={T.inp} placeholder="As on card" value={name} onChange={e=>setName(e.target.value)}/>
-              </div>
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
-                <div>
-                  <label style={{ fontSize:12, fontWeight:600, color:"#475569", marginBottom:5, display:"block" }}>Expiry</label>
-                  <input style={T.inp} placeholder="MM/YY" maxLength={5}
-                    value={expiry} onChange={e=>setExpiry(e.target.value.replace(/\D/g,"").replace(/^(.{2})/,"$1/").slice(0,5))}/>
-                </div>
-                <div>
-                  <label style={{ fontSize:12, fontWeight:600, color:"#475569", marginBottom:5, display:"block" }}>CVV</label>
-                  <input style={T.inp} placeholder="•••" maxLength={4} type="password"
-                    value={cvv} onChange={e=>setCvv(e.target.value.replace(/\D/g,""))}/>
-                </div>
-              </div>
-              <button onClick={simulatePay} disabled={paying||!cardNo||!name||!expiry||!cvv}
-                style={{ ...T.bpG, padding:"13px", opacity:(paying||!cardNo||!name||!expiry||!cvv)?0.6:1 }}>
-                {paying?"Processing…":`Pay ₹${amount} Securely`}
-              </button>
-              <div style={{ display:"flex", gap:8, justifyContent:"center" }}>
-                {["Visa","Mastercard","RuPay","Amex"].map(b => (
-                  <span key={b} style={{ fontSize:10, background:"#f1f5f9", border:"1px solid #e2e8f0", borderRadius:5, padding:"3px 7px", color:"#475569" }}>{b}</span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* NET BANKING TAB */}
-          {tab==="netbanking" && (
-            <div>
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8, marginBottom:16 }}>
-                {[["SBI","🟦"],["HDFC","🟥"],["ICICI","🟧"],["Axis","🟪"],["Kotak","🟥"],["PNB","🟦"]].map(([b,ic]) => (
-                  <button key={b} onClick={simulatePay}
-                    style={{ background:"#f8fafc", border:"1px solid #e2e8f0", borderRadius:8, padding:"12px 8px",
-                      cursor:"pointer", textAlign:"center", fontFamily:"inherit" }}>
-                    <div style={{ fontSize:18, marginBottom:4 }}>{ic}</div>
-                    <div style={{ fontSize:11, fontWeight:600, color:"#334155" }}>{b}</div>
-                  </button>
-                ))}
-              </div>
-              <div style={{ display:"flex", gap:8 }}>
-                <select style={{ ...T.sel, flex:1 }}>
-                  <option>Select other bank…</option>
-                  {["Yes Bank","Bank of Baroda","Canara Bank","UCO Bank","IDBI Bank"].map(b=><option key={b}>{b}</option>)}
-                </select>
-                <button onClick={simulatePay} style={T.bp}>Go →</button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Security strip */}
+        {/* Trust strip */}
         <div style={{ background:"#f8fafc", borderTop:"1px solid #e8edf5", padding:"12px 24px",
           display:"flex", alignItems:"center", justifyContent:"center", gap:16 }}>
-          {["🔒 256-bit SSL","🛡️ PCI-DSS Secure","↩️ Easy Refunds"].map(f=>(
+          {["🔒 256-bit SSL","🛡️ PCI-DSS via Razorpay","↩️ Refund policy"].map(f=>(
             <span key={f} style={{ fontSize:11, color:"#64748b" }}>{f}</span>
           ))}
         </div>
@@ -455,9 +342,8 @@ const PaymentModal = ({ plan, cls, billing, onSuccess, onClose }) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // PRICING PAGE
 // ─────────────────────────────────────────────────────────────────────────────
-const PricingPage = ({ onPay, onBack, access }) => {
-  const [billing, setBilling] = useState("monthly");
-
+const PricingPage = ({ onPay, onBack, access, onRestore }) => {
+  const allUnlocked = access.isUnlocked("all");
   return (
     <div style={T.page}>
       {/* Back button overlay in top left */}
@@ -465,36 +351,23 @@ const PricingPage = ({ onPay, onBack, access }) => {
         display:"flex", alignItems:"center", justifyContent:"space-between", height:58 }}>
         <button onClick={onBack} style={{ ...T.nb, display:"flex", alignItems:"center", gap:6 }}>← Back</button>
         <span style={{ fontWeight:700, fontSize:14, color:"#0f172a" }}>📚 CBSE Practice Hub</span>
-        <div style={{ width:80 }}/>
+        <button onClick={onRestore} style={{ ...T.nb }}>Restore purchases</button>
       </div>
 
-      <div style={{ ...T.main, maxWidth:860 }}>
+      <div style={{ ...T.main, maxWidth:920 }}>
 
         {/* Hero */}
         <div style={{ textAlign:"center", padding:"32px 0 28px" }}>
           <div style={{ display:"inline-flex", alignItems:"center", gap:6, background:"#eff6ff",
             border:"1px solid #bfdbfe", borderRadius:20, padding:"5px 14px", fontSize:12, color:"#1d4ed8", fontWeight:600, marginBottom:16 }}>
-            ⭐ Premium Plans
+            ⭐ Session 2026–27 · One-time unlock
           </div>
           <h1 style={{ fontSize:32, fontWeight:800, color:"#0f172a", margin:"0 0 12px", letterSpacing:"-1px" }}>
             Unlock Unlimited Worksheets
           </h1>
-          <p style={{ fontSize:16, color:"#64748b", margin:"0 0 24px", lineHeight:1.6 }}>
-            3 downloads free · then just ₹49/month per class · Cancel any time
+          <p style={{ fontSize:16, color:"#64748b", margin:"0 0 6px", lineHeight:1.6 }}>
+            3 downloads free · then a single one-time payment · no subscription, no auto-renewal
           </p>
-
-          {/* Billing toggle */}
-          <div style={{ display:"inline-flex", background:"#f1f5f9", border:"1px solid #e2e8f0", borderRadius:10, padding:4 }}>
-            {["monthly","annual"].map(b => (
-              <button key={b} onClick={() => setBilling(b)}
-                style={{ padding:"8px 20px", borderRadius:7, border:"none", cursor:"pointer", fontSize:13,
-                  fontWeight:600, fontFamily:"inherit", background: billing===b?"#fff":"transparent",
-                  color: billing===b?"#0f172a":"#64748b",
-                  boxShadow: billing===b?"0 1px 4px rgba(0,0,0,0.1)":"none", transition:"all 0.15s" }}>
-                {b==="monthly"?"Monthly":"Annual"}{b==="annual"&&<span style={{ marginLeft:6, fontSize:10, background:"#dcfce7", color:"#15803d", padding:"1px 6px", borderRadius:10, fontWeight:700 }}>-50%</span>}
-              </button>
-            ))}
-          </div>
         </div>
 
         {/* Plan cards */}
@@ -511,7 +384,7 @@ const PricingPage = ({ onPay, onBack, access }) => {
               </div>
             ))}
             <div style={{ height:1, background:"#f1f5f9", margin:"16px 0" }}/>
-            {["Unlimited downloads","No ads"].map(f=>(
+            {["Unlimited downloads","Answer keys"].map(f=>(
               <div key={f} style={{ display:"flex", gap:8, fontSize:13, color:"#94a3b8", marginBottom:8 }}>
                 <span style={{ color:"#d1d5db", flexShrink:0 }}>✗</span>{f}
               </div>
@@ -519,7 +392,7 @@ const PricingPage = ({ onPay, onBack, access }) => {
             <button disabled style={{ ...T.bs, width:"100%", marginTop:16, opacity:0.5, cursor:"not-allowed" }}>Current Plan</button>
           </div>
 
-          {/* Per class plan */}
+          {/* Single class plan */}
           <div style={{ ...T.card, border:"2px solid #1e40af", position:"relative" }}>
             <div style={{ position:"absolute", top:-12, left:"50%", transform:"translateX(-50%)",
               background:"#1e40af", color:"#fff", fontSize:11, fontWeight:700, padding:"4px 14px", borderRadius:20 }}>
@@ -527,19 +400,19 @@ const PricingPage = ({ onPay, onBack, access }) => {
             </div>
             <div style={{ fontSize:11, fontWeight:700, color:"#1d4ed8", letterSpacing:"0.5px", marginBottom:8 }}>SINGLE CLASS</div>
             <div style={{ display:"flex", alignItems:"baseline", gap:4, marginBottom:4 }}>
-              <span style={{ fontSize:28, fontWeight:800, color:"#0f172a" }}>₹{billing==="annual"?PLANS.class.annual:PLANS.class.monthly}</span>
-              <span style={{ fontSize:13, color:"#64748b" }}>/{billing==="annual"?"year":"month"}</span>
+              <span style={{ fontSize:28, fontWeight:800, color:"#0f172a" }}>₹{PLANS.class.price}</span>
+              <span style={{ fontSize:13, color:"#64748b" }}>one-time</span>
             </div>
-            {billing==="annual" && <div style={{ fontSize:12, color:"#15803d", marginBottom:4 }}>= ₹{Math.round(PLANS.class.annual/12)}/month · 50% savings</div>}
-            <div style={{ fontSize:13, color:"#64748b", marginBottom:20 }}>Per class of your choice</div>
-            {["Unlimited downloads — that class","All 15 worksheets per subject","5 sets × 3 difficulty levels","Answer keys included","New content monthly"].map(f=>(
+            <div style={{ fontSize:13, color:"#64748b", marginBottom:20 }}>1-year access · one class of your choice</div>
+            {["Unlimited downloads — that class","All 15 worksheets per subject","5 sets × 3 difficulty levels","Answer keys included","New content through the session"].map(f=>(
               <div key={f} style={{ display:"flex", gap:8, fontSize:13, color:"#334155", marginBottom:8 }}>
                 <span style={{ color:"#16a34a", flexShrink:0 }}>✓</span>{f}
               </div>
             ))}
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginTop:16 }}>
               {[1,2,3,4,5,6,7,8].map(c => (
-                <button key={c} onClick={() => onPay(c,"class",billing)}
+                <button key={c} onClick={() => onPay("class", c)}
+                  disabled={access.isUnlocked(c)}
                   style={{ background: access.isUnlocked(c)?"#f0fdf4":"#1e40af",
                     color: access.isUnlocked(c)?"#15803d":"#fff",
                     border: `1px solid ${access.isUnlocked(c)?"#86efac":"#1e40af"}`,
@@ -551,27 +424,38 @@ const PricingPage = ({ onPay, onBack, access }) => {
             </div>
           </div>
 
-          {/* All classes plan */}
+          {/* All classes + lifetime */}
           <div style={{ ...T.card, background:"linear-gradient(160deg,#f5f3ff,#ede9fe)", border:"2px solid #7c3aed" }}>
             <div style={{ fontSize:11, fontWeight:700, color:"#7c3aed", letterSpacing:"0.5px", marginBottom:8 }}>ALL CLASSES 🚀</div>
             <div style={{ display:"flex", alignItems:"baseline", gap:4, marginBottom:4 }}>
-              <span style={{ fontSize:28, fontWeight:800, color:"#0f172a" }}>₹{billing==="annual"?PLANS.all.annual:PLANS.all.monthly}</span>
-              <span style={{ fontSize:13, color:"#64748b" }}>/{billing==="annual"?"year":"month"}</span>
+              <span style={{ fontSize:28, fontWeight:800, color:"#0f172a" }}>₹{PLANS.all.price}</span>
+              <span style={{ fontSize:13, color:"#64748b" }}>one-time</span>
             </div>
-            {billing==="annual" && <div style={{ fontSize:12, color:"#15803d", marginBottom:4 }}>= ₹{Math.round(PLANS.all.annual/12)}/month · 55% savings</div>}
-            <div style={{ fontSize:13, color:"#64748b", marginBottom:20 }}>Best value for families</div>
-            {["Unlimited for all 8 classes","Perfect for siblings","405 total worksheets","Priority new content","All future classes included"].map(f=>(
+            <div style={{ fontSize:13, color:"#64748b", marginBottom:20 }}>1-year access · best for siblings</div>
+            {["Unlimited for all 8 classes","Perfect for siblings","405 total worksheets","Answer keys included","New content through the session"].map(f=>(
               <div key={f} style={{ display:"flex", gap:8, fontSize:13, color:"#4c1d95", marginBottom:8 }}>
                 <span style={{ color:"#7c3aed", flexShrink:0 }}>✓</span>{f}
               </div>
             ))}
-            <button onClick={() => onPay("all","all",billing)}
-              disabled={access.isUnlocked("all")}
-              style={{ background: access.isUnlocked("all")?"#f0fdf4":"linear-gradient(135deg,#7c3aed,#6d28d9)",
-                color: access.isUnlocked("all")?"#15803d":"#fff",
-                border:"none", padding:"13px", borderRadius:9, fontSize:14, cursor: access.isUnlocked("all")?"default":"pointer",
-                fontWeight:700, width:"100%", marginTop:20, fontFamily:"inherit" }}>
-              {access.isUnlocked("all")?"✓ All Classes Unlocked":"🚀 Unlock All Classes"}
+            <button onClick={() => onPay("all", null)} disabled={allUnlocked}
+              style={{ background: allUnlocked?"#f0fdf4":"linear-gradient(135deg,#7c3aed,#6d28d9)",
+                color: allUnlocked?"#15803d":"#fff",
+                border:"none", padding:"13px", borderRadius:9, fontSize:14, cursor: allUnlocked?"default":"pointer",
+                fontWeight:700, width:"100%", marginTop:14, fontFamily:"inherit" }}>
+              {allUnlocked?"✓ All Classes Unlocked":`🚀 Unlock All — ₹${PLANS.all.price}`}
+            </button>
+
+            <div style={{ height:1, background:"rgba(124,58,237,0.2)", margin:"16px 0 14px" }}/>
+            <div style={{ display:"flex", alignItems:"baseline", justifyContent:"center", gap:6, marginBottom:10 }}>
+              <span style={{ fontSize:12, fontWeight:700, color:"#7c3aed" }}>LIFETIME</span>
+              <span style={{ fontSize:18, fontWeight:800, color:"#0f172a" }}>₹{PLANS.lifetime.price}</span>
+              <span style={{ fontSize:11, color:"#64748b" }}>· all future content</span>
+            </div>
+            <button onClick={() => onPay("lifetime", null)} disabled={allUnlocked}
+              style={{ background:"#fff", color:"#6d28d9", border:"1.5px solid #c4b5fd",
+                padding:"11px", borderRadius:9, fontSize:13, cursor: allUnlocked?"default":"pointer",
+                fontWeight:700, width:"100%", fontFamily:"inherit", opacity: allUnlocked?0.6:1 }}>
+              {allUnlocked?"Already unlocked":`Buy Lifetime — ₹${PLANS.lifetime.price}`}
             </button>
           </div>
         </div>
@@ -580,10 +464,10 @@ const PricingPage = ({ onPay, onBack, access }) => {
         <div style={{ ...T.card, marginBottom:24 }}>
           <h3 style={{ fontSize:16, fontWeight:700, color:"#0f172a", marginBottom:16 }}>Frequently Asked Questions</h3>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))", gap:20 }}>
-            {[["Can I cancel anytime?","Yes. Cancel from your account dashboard before the next billing cycle and you won't be charged."],
-              ["Which payment methods are accepted?","UPI (GPay, PhonePe, Paytm), Debit/Credit Cards (Visa, Mastercard, RuPay), Net Banking, and all major wallets."],
-              ["Do I get a refund if I cancel?","We offer a 7-day money-back guarantee if you are not satisfied with your purchase."],
-              ["Is the subscription per child or per family?","Your subscription covers one account and can be used by one family across all devices."]].map(([q,a]) => (
+            {[["Is this a subscription?","No. It's a one-time payment. 1-year plans give access for the 2026–27 session; the Lifetime plan never expires. Nothing auto-renews."],
+              ["Which payment methods are accepted?","UPI (GPay, PhonePe, Paytm), Debit/Credit Cards (Visa, Mastercard, RuPay), Net Banking, and major wallets — via Razorpay."],
+              ["Can I get a refund?","Yes — a 7-day money-back guarantee on your first purchase if you're not satisfied. See our Refund Policy."],
+              ["I paid on another device — how do I access it?","Tap “Restore purchases” and enter the email you used at checkout to re-unlock instantly."]].map(([q,a]) => (
               <div key={q}>
                 <div style={{ fontSize:13, fontWeight:700, color:"#0f172a", marginBottom:5 }}>{q}</div>
                 <div style={{ fontSize:13, color:"#64748b", lineHeight:1.6 }}>{a}</div>
@@ -597,6 +481,12 @@ const PricingPage = ({ onPay, onBack, access }) => {
           {["🔒 Secure Payments","↩️ 7-Day Refund","📱 UPI & Cards","🇮🇳 Indian Payment Gateway"].map(f=>(
             <div key={f} style={{ fontSize:13, color:"#64748b" }}>{f}</div>
           ))}
+        </div>
+        <div style={{ textAlign:"center", marginTop:18, fontSize:12, color:"#94a3b8" }}>
+          <a href="/terms.html" style={{ color:"#64748b", margin:"0 8px" }}>Terms</a>·
+          <a href="/privacy.html" style={{ color:"#64748b", margin:"0 8px" }}>Privacy</a>·
+          <a href="/refunds.html" style={{ color:"#64748b", margin:"0 8px" }}>Refunds</a>·
+          <a href="/contact.html" style={{ color:"#64748b", margin:"0 8px" }}>Contact</a>
         </div>
       </div>
     </div>
@@ -618,7 +508,7 @@ const SuccessModal = ({ cls, plan, onClose }) => (
           : `Class ${cls} is now unlocked! Download all 15 worksheets for every subject.`}
       </p>
       <div style={{ background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:12, padding:"16px", marginBottom:24, textAlign:"left" }}>
-        {["Unlimited downloads active","All sets A–E available","Answer keys included","New content added monthly"].map(f=>(
+        {["Unlimited downloads active","All sets A–E available","Answer keys included","New content added through the session"].map(f=>(
           <div key={f} style={{ display:"flex", gap:8, fontSize:13, color:"#166534", marginBottom:6 }}>
             <span style={{ color:"#16a34a" }}>✓</span>{f}
           </div>
@@ -680,7 +570,7 @@ const WsCard = ({ ws, access, onDownload, onUpgradePrompt }) => {
           <button onClick={onUpgradePrompt}
             style={{ background:"linear-gradient(135deg,#1e40af,#2563eb)", color:"#fff", border:"none",
               padding:"8px 16px", borderRadius:8, fontSize:12, fontWeight:700, cursor:"pointer" }}>
-            Unlock — ₹49/month
+            Unlock — ₹199
           </button>
         </div>
       )}
@@ -734,7 +624,7 @@ export default function CBSEPracticeHub() {
   const [fDiff,      setFDiff]      = useState("");
   // Modals
   const [paywall,    setPaywall]    = useState(null);  // { cls }
-  const [payment,    setPayment]    = useState(null);  // { cls, plan, billing }
+  const [payment,    setPayment]    = useState(null);  // { planKey, cls }
   const [success,    setSuccess]    = useState(null);  // { cls, plan }
   const [showPricing,setShowPricing]= useState(false);
 
@@ -781,30 +671,38 @@ export default function CBSEPracticeHub() {
     } else { toast2("PDF not available yet","warn"); }
   };
 
-  // Paywall → payment
-  const handlePaywallSubscribe = (planCls, plan) => {
+  // Paywall / Pricing → open payment modal.  planKey: "class"|"all"|"lifetime"
+  const handleBuy = (planKey, cls) => {
     setPaywall(null);
-    setPayment({ cls: planCls, plan, billing:"monthly" });
-  };
-
-  // Pricing → payment
-  const handlePricingPay = (planCls, plan, billing) => {
     setShowPricing(false);
-    setPayment({ cls: planCls, plan, billing });
+    setPayment({ planKey, cls });
   };
 
-  // Payment → success
-  const handlePaySuccess = () => {
-    const { cls: pCls, plan } = payment;
-    access.subscribe(plan==="all" ? "all" : pCls);
+  // Payment verified → grant access + show success.  scope: "all" | "1".."8"
+  const handlePaySuccess = (scope, email) => {
+    const plan = scope === "all" ? "all" : "class";
+    access.grant(scope, email);
     setPayment(null);
-    setSuccess({ cls: pCls, plan });
-    toast2(plan==="all" ? "🎉 All classes unlocked!" : `🎉 Class ${pCls} unlocked!`,"success");
+    setSuccess({ cls: scope, plan });
+    toast2(scope === "all" ? "🎉 All classes unlocked!" : `🎉 Class ${scope} unlocked!`, "success");
+  };
+
+  // Restore purchases by email (new device / cleared browser).
+  const handleRestore = async () => {
+    const email = window.prompt("Enter the email you used at checkout:");
+    if (!email) return;
+    const scopes = await access.restore(email.trim().toLowerCase());
+    toast2(
+      scopes.length
+        ? `✅ Restored: ${scopes.map(s => s === "all" ? "All Classes" : "Class " + s).join(", ")}`
+        : "No active purchase found for that email.",
+      scopes.length ? "success" : "warn"
+    );
   };
 
   if (showPricing) return (
     <>
-      <PricingPage onPay={handlePricingPay} onBack={() => setShowPricing(false)} access={access} />
+      <PricingPage onPay={handleBuy} onBack={() => setShowPricing(false)} access={access} onRestore={handleRestore} />
       {payment && <PaymentModal {...payment} onSuccess={handlePaySuccess} onClose={() => setPayment(null)} />}
       {success  && <SuccessModal {...success} onClose={() => setSuccess(null)} />}
     </>
@@ -821,13 +719,13 @@ export default function CBSEPracticeHub() {
         <div style={{ display:"inline-flex", alignItems:"center", gap:6, background:"rgba(255,255,255,0.12)",
           border:"1px solid rgba(255,255,255,0.25)", borderRadius:20, padding:"5px 14px", fontSize:12,
           color:"rgba(255,255,255,0.9)", fontWeight:600, marginBottom:18 }}>
-          ✨ CBSE 2025–26 · 405 Free Worksheets Available
+          ✨ CBSE 2026–27 · 405 Free Worksheets Available
         </div>
         <h1 style={{ fontSize:40, fontWeight:900, color:"#fff", margin:"0 0 14px", letterSpacing:"-1.5px", lineHeight:1.1 }}>
           Practice Smarter with<br/><span style={{ color:"#fbbf24" }}>CBSE Worksheets</span>
         </h1>
         <p style={{ fontSize:16, color:"rgba(255,255,255,0.7)", margin:"0 0 28px", maxWidth:460, marginLeft:"auto", marginRight:"auto", lineHeight:1.7 }}>
-          3 free downloads per class · Then ₹49/month for unlimited access · All subjects · Answer keys included
+          3 free downloads per class · Then a one-time ₹199 to unlock a class · All subjects · Answer keys included
         </p>
         <div style={{ display:"flex", gap:10, justifyContent:"center", flexWrap:"wrap" }}>
           <button onClick={() => document.getElementById("cg")?.scrollIntoView({ behavior:"smooth" })}
@@ -844,7 +742,7 @@ export default function CBSEPracticeHub() {
       {/* Feature strip */}
       <div style={{ background:"#fff", borderBottom:"1px solid #e8edf5" }}>
         <div style={{ maxWidth:1100, margin:"0 auto", padding:"0 20px", display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))" }}>
-          {[["📥","3 Free per Class","No sign-up needed"],["🔓","₹49/month","Unlock a class fully"],
+          {[["📥","3 Free per Class","No sign-up needed"],["🔓","₹199 one-time","Unlock a class fully"],
             ["📚","All Subjects","English, Math, Science+"],["✅","Answer Keys","Every PDF has answers"],
             ["🖨️","A4 Print-Ready","Download & print instantly"]].map(([ic,lb,ds],i,arr) => (
             <div key={i} style={{ padding:"14px", textAlign:"center", borderRight: i<arr.length-1?"1px solid #e8edf5":"none" }}>
@@ -912,7 +810,7 @@ export default function CBSEPracticeHub() {
         <div style={{ background:"linear-gradient(135deg,#1e3a8a,#1e40af)", borderRadius:14, padding:"28px 28px", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:16, marginBottom:36 }}>
           <div>
             <div style={{ fontSize:18, fontWeight:800, color:"#fff", marginBottom:6 }}>Unlock Unlimited Downloads</div>
-            <div style={{ fontSize:14, color:"rgba(255,255,255,0.75)", lineHeight:1.5 }}>₹49/month per class · ₹149/month for all 8 classes · Cancel anytime</div>
+            <div style={{ fontSize:14, color:"rgba(255,255,255,0.75)", lineHeight:1.5 }}>₹199 one-time per class · ₹499 for all 8 classes · no subscription</div>
           </div>
           <button onClick={() => setShowPricing(true)}
             style={{ background:"#fbbf24", color:"#1e3a8a", border:"none", padding:"13px 24px", borderRadius:9, fontSize:14, fontWeight:800, cursor:"pointer", whiteSpace:"nowrap" }}>
@@ -926,7 +824,7 @@ export default function CBSEPracticeHub() {
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))", gap:14 }}>
           {[["🆓","Step 1","Start for Free","3 worksheets free per class — no sign up, no credit card"],
             ["📥","Step 2","Download & Practice","Choose any subject, pick your difficulty set, download instantly"],
-            ["⭐","Step 3","Upgrade When Ready","Just ₹49/month to unlock unlimited for one class"]].map(([ic,n,t,d]) => (
+            ["⭐","Step 3","Upgrade When Ready","One-time ₹199 unlocks unlimited for a full class"]].map(([ic,n,t,d]) => (
             <div key={n} style={{ ...T.card, display:"flex", gap:14, cursor:"default" }}>
               <div style={{ fontSize:24, flexShrink:0 }}>{ic}</div>
               <div>
@@ -939,7 +837,7 @@ export default function CBSEPracticeHub() {
         </div>
       </div>
       <div style={{ borderTop:"1px solid #e8edf5", padding:"18px 20px", textAlign:"center", fontSize:12, color:"#94a3b8", background:"#fff" }}>
-        © 2025 CBSE Practice Hub · Free & Premium Worksheets · Classes 1–8
+        © 2026 CBSE Practice Hub · Free & Premium Worksheets · Classes 1–8
       </div>
     </div>
   );
@@ -964,7 +862,7 @@ export default function CBSEPracticeHub() {
             <div style={{ background:"#fff7ed", border:"1px solid #fed7aa", borderRadius:10, padding:"14px 18px", marginBottom:20,
               display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:10 }}>
               <div style={{ fontSize:13, color:"#92400e", fontWeight:600 }}>🔒 You've used all free downloads for Class {cls}</div>
-              <button onClick={() => setPaywall({ cls })} style={{ ...T.bp, padding:"8px 16px", fontSize:12 }}>Unlock — ₹49/month</button>
+              <button onClick={() => setPaywall({ cls })} style={{ ...T.bp, padding:"8px 16px", fontSize:12 }}>Unlock — ₹199</button>
             </div>
           )}
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))", gap:14 }}>
@@ -989,7 +887,7 @@ export default function CBSEPracticeHub() {
             })}
           </div>
           {!unlocked && <div style={{ marginTop:24, textAlign:"center" }}>
-            <button onClick={() => setPaywall({ cls })} style={{ ...T.bpG, padding:"12px 28px", fontSize:14 }}>🔓 Unlock All of Class {cls} — ₹49/month</button>
+            <button onClick={() => setPaywall({ cls })} style={{ ...T.bpG, padding:"12px 28px", fontSize:14 }}>🔓 Unlock All of Class {cls} — ₹199</button>
           </div>}
         </div>
       </div>
@@ -1051,7 +949,7 @@ export default function CBSEPracticeHub() {
           {!unlocked && (
             <div style={{ background:"linear-gradient(135deg,#f0fdf4,#dcfce7)", border:"1px solid #86efac", borderRadius:14, padding:"24px", textAlign:"center", marginTop:28 }}>
               <div style={{ fontSize:18, fontWeight:800, color:"#15803d", marginBottom:6 }}>Want unlimited {subj} worksheets?</div>
-              <div style={{ fontSize:14, color:"#166534", marginBottom:16 }}>Unlock all 15 worksheets for Class {cls} for just ₹49/month</div>
+              <div style={{ fontSize:14, color:"#166534", marginBottom:16 }}>Unlock all 15 worksheets for Class {cls} for a one-time ₹199</div>
               <button onClick={() => setPaywall({ cls })} style={{ ...T.bpG, padding:"12px 28px", fontSize:14 }}>🔓 Unlock Class {cls}</button>
             </div>
           )}
@@ -1212,7 +1110,7 @@ export default function CBSEPracticeHub() {
       {paywall && (
         <PaywallModal
           cls={paywall.cls}
-          onSubscribe={handlePaywallSubscribe}
+          onBuy={handleBuy}
           onClose={() => setPaywall(null)}
         />
       )}
