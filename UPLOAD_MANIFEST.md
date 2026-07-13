@@ -1,41 +1,45 @@
-# UPLOAD MANIFEST — what goes where in duttsiddharth/Cbse-Practice-Hub
+# UPLOAD MANIFEST — duttsiddharth/Cbse-Practice-Hub
 
-Copy these into your repo at the SAME paths. Then commit & push (Vercel
-auto-deploys).
+Copy into your repo at the SAME paths, commit & push (Vercel auto-deploys and
+regenerates the SEO pages via the new build script).
 
-## REPLACE (overwrite existing files)
-- `src/CBSEPracticeHub.jsx`   ← new pricing, real one-time checkout, restore, 2026–27
-- `index.html`                ← SEO title + meta, favicon.svg
-- `package.json`              ← adds razorpay + @supabase/supabase-js
+## REPLACE (overwrite existing)
+- `src/CBSEPracticeHub.jsx`   ← payments + pricing + SEO deep-linking
+- `index.html`                ← SEO meta, no-JS fallback content, structured data
+- `package.json`              ← razorpay + supabase deps; build now generates SEO pages
+- `vercel.json`               ← SPA fallback that leaves static SEO pages crawlable
+                                  (create it if you don't have one)
 
 ## ADD (new files)
-- `api/_lib/razorpay.js`
-- `api/_lib/supabaseAdmin.js`
-- `api/order/create.js`
-- `api/order/verify.js`
-- `api/entitlements.js`
-- `src/lib/payments.js`
-- `src/lib/supabaseClient.js`
+Payments:
+- `api/_lib/razorpay.js`, `api/_lib/supabaseAdmin.js`
+- `api/order/create.js`, `api/order/verify.js`, `api/entitlements.js`
+- `src/lib/payments.js`, `src/lib/supabaseClient.js`
 - `supabase/schema.sql`
-- `public/terms.html`
-- `public/privacy.html`
-- `public/refunds.html`
-- `public/contact.html`
-- `.env.example`   (do NOT commit real secrets — set them in Vercel)
-- `SETUP.md`
+- `public/terms.html`, `public/privacy.html`, `public/refunds.html`, `public/contact.html`
+- `.env.example`
+
+SEO:
+- `scripts/generate-seo.mjs`          ← generates the pages at build time
+- `public/class/**`                   ← 35 generated pages (regenerated on each build)
+- `public/sitemap.xml`, `public/robots.txt`  ← generated
+
+Docs:
+- `SETUP.md` (payments), `SEO_STEPS.md` (search), this manifest
 
 ## DELETE (from the repo)
-- `src/supabase,js`            (empty, mis-named, unused)
-- `src/CBSEPracticeHub.-old.jsx`  (stale backup; still has ₹49/month + 2025)
+- `src/supabase,js`
+- `src/CBSEPracticeHub.-old.jsx`
 
 ## DO NOT COMMIT
-- Any real key values. Put them in Vercel env vars only.
+- Real secrets. Keys live in Vercel env vars only.
 
----
+## After deploy
+1. Confirm `/class/5/maths/`, `/sitemap.xml`, `/robots.txt` load.
+2. Google Search Console → verify → submit `sitemap.xml` (see SEO_STEPS.md).
+3. Payments: env vars set (Production) + `supabase/schema.sql` run + redeploy.
 
-### Quick sanity after deploy
-1. `npm install` locally builds without errors.
-2. Env vars set in Vercel (test keys first).
-3. Supabase schema run.
-4. Use 3 free downloads → paywall → checkout → unlock works and a `paid` row
-   lands in Supabase `purchases`.
+## Note
+`data.json` is NOT included — your repo's copy is the source of truth; the build
+script reads it to generate the pages. Edit worksheets there and they propagate
+to the SEO pages on next deploy.

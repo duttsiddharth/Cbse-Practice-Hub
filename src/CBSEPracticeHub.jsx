@@ -639,6 +639,21 @@ export default function CBSEPracticeHub() {
     setShowPricing(false);
   };
 
+  // Deep-link from the static SEO landing pages: /?class=5&subject=maths
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const c = parseInt(p.get("class"), 10);
+    if (c >= 1 && c <= 8) {
+      setCls(c);
+      const subMap = { maths:"Mathematics", english:"English", evs:"EVS", science:"Science", "social-science":"Social Science" };
+      const s = subMap[(p.get("subject") || "").toLowerCase()];
+      if (s) { setSubj(s); setView("subject"); } else { setView("class"); }
+      // Clean the URL so it reads "/" after landing.
+      window.history.replaceState({}, "", "/");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const subjWS = useMemo(() =>
     cls && subj ? WORKSHEETS.filter(w => w.class===cls && w.subject===subj) : [],
     [cls,subj]);
